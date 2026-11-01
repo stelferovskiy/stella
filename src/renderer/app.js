@@ -1515,6 +1515,45 @@
     const bind = (id, key) => { const c = appS.querySelector(id); c.checked = !!s[key]; c.addEventListener('change', () => saveSettings({ [key]: c.checked })); };
     bind('#optTray', 'closeToTray'); bind('#optAuto', 'autostart'); bind('#optNotif', 'notifications');
 
+    // DNS только для Stella
+    const dnsS = el('<div class="sect"><h3>DNS</h3><div class="hint" data-i18n="dns.hint"></div>' +
+      '<div class="field"><label for="dnsActive" data-i18n="dns.active"></label><div class="row"><select id="dnsActive" class="input"></select><button type="button" class="btn" id="dnsTest" data-i18n="dns.test"></button></div><div class="hint" id="dnsState"></div></div>' +
+      '<label class="check"><input type="checkbox" id="dnsAsk"> <span data-i18n="dns.askOnStart"></span></label>' +
+      '<div id="dnsRows" class="sect"></div>' +
+      '<div class="field"><label data-i18n="dns.addTitle"></label><div class="row"><input id="dnsName" class="input" data-i18n-placeholder="dns.name" style="max-width:160px"><input id="dnsAddr" class="input" data-i18n-placeholder="dns.address"><input id="dnsBoot" class="input" data-i18n-placeholder="dns.bootstrap" style="max-width:150px"><button type="button" class="btn" id="dnsAdd" data-i18n="common.add"></button></div><div class="hint" data-i18n="dns.addHint"></div></div></div>');
+    body.append(dnsS);
+    const dnsSave = async (patch) => { await saveSettings({ dns: Object.assign({}, S.settings.dns || {}, patch) }); await renderDns(); };
+    async function renderDns() {
+      const st = await api.dnsStatus();
+      const sel = dnsS.querySelector('#dnsActive'); sel.textContent = '';
+      for (const e of st.entries) { const o = document.createElement('option'); o.value = e.id; o.textContent = e.label; sel.append(o); }
+      sel.value = (S.settings.dns && S.settings.dns.active) || 'system';
+      dnsS.querySelector('#dnsAsk').checked = st.askOnStart;
+      dnsS.querySelector('#dnsState').textContent = st.port ? L('dns.stateOn', { port: st.port }) : L('dns.stateOff');
+      const rows = dnsS.querySelector('#dnsRows'); rows.textContent = '';
+      for (const e of st.entries.filter((x) => !x.builtin)) {
+        const r = el('<div class="row"><span style="flex:1"></span><button type="button" class="btn danger" data-i18n="common.delete"></button></div>');
+        r.firstChild.textContent = e.label + (e.bootstrap ? ' (' + e.bootstrap + ')' : '');
+        r.lastChild.addEventListener('click', () => dnsSave({ custom: (S.settings.dns.custom || []).filter((c) => c.id !== e.id) }));
+        I18N.apply(r); rows.append(r);
+      }
+    }
+    dnsS.querySelector('#dnsActive').addEventListener('change', (e) => dnsSave({ active: e.target.value }).then(() => toast(L('dns.applied'))));
+    dnsS.querySelector('#dnsAsk').addEventListener('change', (e) => dnsSave({ askOnStart: e.target.checked }));
+    dnsS.querySelector('#dnsTest').addEventListener('click', async () => {
+      const r = await api.dnsTest(dnsS.querySelector('#dnsActive').value);
+      toast(r.ok ? L('dns.testOk', { addresses: r.addresses.join(', '), ms: r.ms }) : L('dns.testFailed', { message: r.message }));
+    });
+    dnsS.querySelector('#dnsAdd').addEventListener('click', async () => {
+      const q = (id) => dnsS.querySelector(id);
+      const r = await api.dnsValidate({ name: q('#dnsName').value, address: q('#dnsAddr').value, bootstrap: q('#dnsBoot').value });
+      if (!r.ok) { toast(r.field === 'name' ? L('dns.invalid.name') : r.field === 'bootstrap' ? L('dns.invalid.bootstrap') : L('dns.invalid.address')); return; }
+      await dnsSave({ custom: ((S.settings.dns && S.settings.dns.custom) || []).concat([r.entry]) });
+      q('#dnsName').value = ''; q('#dnsAddr').value = ''; q('#dnsBoot').value = '';
+      toast(L('dns.added'));
+    });
+    renderDns();
+
     // навыки
     const sk = el('<div class="sect"><h3 data-i18n="settings.skills"></h3><div id="skillRows" class="sect"></div><div><button type="button" class="btn" id="addSkill" data-i18n="settings.addSkill"></button></div></div>');
     body.append(sk);

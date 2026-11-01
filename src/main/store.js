@@ -56,6 +56,7 @@ function createStore(baseDir) {
     notifications: true,
     memoryEnabled: true,
     hudOpen: true,
+    dns: { active: 'system', askOnStart: false, custom: [] },
     skills: SKILL_IDS.map(builtinSkill),
     directives: DIRECTIVE_IDS.map(builtinDirective)
   };

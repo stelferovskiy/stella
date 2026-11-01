@@ -1,5 +1,5 @@
 /* Stella — основной процесс */
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, globalShortcut, Notification, nativeImage, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, globalShortcut, Notification, nativeImage, safeStorage, session, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { createStore } = require('./src/main/store');
@@ -16,6 +16,7 @@ const { L } = i18n;
 const { createPlugins } = require('./src/main/plugins');
 const { createMemory } = require('./src/main/memory');
 const { createUpdater } = require('./src/main/updater');
+const stellaDns = require('./src/main/dns');
 
 app.setAppUserModelId('com.stella.desktop');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
@@ -60,6 +61,73 @@ function getCfCreds() {
   let token = '';
   if (s.cfTokenEnc) { try { token = safeStorage.decryptString(Buffer.from(s.cfTokenEnc, 'base64')); } catch (e) {} }
   return { accountId: (s.cfAccountId || '').trim(), token };
+}
+
+/* ---------- DNS только для Stella ---------- */
+const nodeFetch = globalThis.fetch;
+const savedProxyEnv = Object.fromEntries(stellaDns.PROXY_VARS.map((k) => [k, process.env[k]]));
+const systemResolver = stellaDns.makeResolver(null);
+let dnsProxy = null;
+let dnsResolver = null;
+
+function dnsLabel(e) {
+  if (e.id === 'system') return L('dns.system');
+  return e.name + ' — ' + (e.doh ? 'DoH' : e.servers.join(', '));
+}
+
+async function applyDns() {
+  const s = store.getSettings();
+  let entry = stellaDns.findEntry(s, s.dns && s.dns.active);
+  try {
+    if (entry.id !== 'system') {
+      dnsResolver = stellaDns.makeResolver(entry);
+      if (!dnsProxy) dnsProxy = await stellaDns.startProxy(() => dnsResolver || systemResolver);
+      Object.assign(process.env, stellaDns.proxyEnv(dnsProxy.port));
+      await session.defaultSession.setProxy({ proxyRules: 'http://127.0.0.1:' + dnsProxy.port, proxyBypassRules: '<local>' });
+      globalThis.fetch = (input, init) => net.fetch(input, init);
+    } else {
+      dnsResolver = null;
+      for (const [k, v] of Object.entries(savedProxyEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+      await session.defaultSession.setProxy({ mode: 'system' });
+      globalThis.fetch = nodeFetch;
+    }
+    await session.defaultSession.closeAllConnections();
+  } catch (e) {
+    dnsResolver = null;
+    globalThis.fetch = nodeFetch;
+    broadcast('toast', L('dns.applyFailed', { message: e.message }));
+    entry = stellaDns.BUILTIN[0];
+  }
+  return entry;
+}
+
+function dnsStatus() {
+  const s = store.getSettings();
+  const active = dnsResolver ? dnsResolver.entry.id : 'system';
+  return { entries: stellaDns.listEntries(s).map((e) => Object.assign({}, e, { label: dnsLabel(e) })), active, askOnStart: !!(s.dns && s.dns.askOnStart), port: dnsResolver && dnsProxy ? dnsProxy.port : 0 };
+}
+
+function sanitizeDns(d, prev) {
+  prev = prev || {};
+  d = Object.assign({}, prev, d || {});
+  const custom = [];
+  for (const e of Array.isArray(d.custom) ? d.custom : []) { try { custom.push(stellaDns.normalizeEntry(e)); } catch (_) {} }
+  const out = { active: String(d.active || 'system'), askOnStart: !!d.askOnStart, custom };
+  if (!stellaDns.listEntries({ dns: out }).some((e) => e.id === out.active)) out.active = 'system';
+  return out;
+}
+
+async function pickDnsOnStart() {
+  const s = store.getSettings();
+  if (!s.dns || !s.dns.askOnStart || startHidden) return;
+  const entries = stellaDns.listEntries(s);
+  const cur = Math.max(0, entries.findIndex((e) => e.id === s.dns.active));
+  const r = await dialog.showMessageBox({
+    type: 'question', title: 'Stella', message: L('dns.pickTitle'), detail: L('dns.pickDetail'),
+    buttons: entries.map(dnsLabel), defaultId: cur, cancelId: cur,
+    checkboxLabel: L('dns.dontAsk'), checkboxChecked: false
+  });
+  store.saveSettings({ dns: sanitizeDns({ active: entries[r.response].id, askOnStart: !r.checkboxChecked }, s.dns) });
 }
 
 function publicSettings() {
@@ -169,12 +237,26 @@ function wireIpc() {
     env: envInfo()
   }));
   ipcMain.handle('env:check', () => envInfo());
+  ipcMain.handle('dns:status', () => dnsStatus());
+  ipcMain.handle('dns:validate', (_e, entry) => {
+    try { return { ok: true, entry: stellaDns.normalizeEntry(entry) }; } catch (e) { return { ok: false, field: e.message }; }
+  });
+  ipcMain.handle('dns:test', async (_e, id, host) => {
+    const entry = stellaDns.findEntry(store.getSettings(), id);
+    const t = Date.now();
+    try {
+      const list = await stellaDns.makeResolver(entry.id === 'system' ? null : entry).lookup(String(host || 'api.anthropic.com'));
+      return { ok: true, addresses: list.slice(0, 4), ms: Date.now() - t };
+    } catch (e) { return { ok: false, message: e.message }; }
+  });
 
-  ipcMain.handle('settings:save', (_e, patch) => {
+  ipcMain.handle('settings:save', async (_e, patch) => {
     const safe = Object.assign({}, patch);
     delete safe.apiKeyEnc; delete safe.hasApiKey; delete safe.cfTokenEnc; delete safe.hasCfToken;
     const before = store.getSettings();
+    if (safe.dns !== undefined) safe.dns = sanitizeDns(safe.dns, before.dns);
     store.saveSettings(safe);
+    if (safe.dns !== undefined) await applyDns();
     let hotkeyOk = true;
     if (safe.hotkey !== undefined && safe.hotkey !== before.hotkey) hotkeyOk = registerHotkey(safe.hotkey);
     if (safe.autostart !== undefined) applyAutostart(safe.autostart);
@@ -303,7 +385,7 @@ function wireIpc() {
 
 app.on('second-instance', () => showWindow());
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   store = createStore(app.getPath('userData'));
   i18n.configure({ getSettings: () => store.getSettings(), systemLocale: app.getLocale() });
   plugins = createPlugins({ store });
@@ -314,6 +396,8 @@ app.whenReady().then(() => {
   images = createImages({ store, getCreds: getCfCreds });
   gptImages = createGptImages({ store, broadcast });
   wireIpc();
+  try { await pickDnsOnStart(); } catch (e) {}
+  await applyDns();
   createWindow();
   createTray();
   const s = store.getSettings();

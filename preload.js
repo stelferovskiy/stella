@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('stellaLocales', { ru: require('./src/locales/ru
 contextBridge.exposeInMainWorld('stella', {
   init: () => ipcRenderer.invoke('app:init'),
   checkEnv: () => ipcRenderer.invoke('env:check'),
+  dnsStatus: () => ipcRenderer.invoke('dns:status'),
+  dnsValidate: (entry) => ipcRenderer.invoke('dns:validate', entry),
+  dnsTest: (id, host) => ipcRenderer.invoke('dns:test', id, host),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   setApiKey: (key) => ipcRenderer.invoke('apikey:set', key),
   codexModels: () => ipcRenderer.invoke('codex:models'),
