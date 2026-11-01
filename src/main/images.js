@@ -2,10 +2,11 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { L } = require('./i18n');
 
 const MODELS = {
-  schnell: { id: '@cf/black-forest-labs/flux-1-schnell', label: 'FLUX.1 schnell — быстрая' },
-  klein: { id: '@cf/black-forest-labs/flux-2-klein-4b', label: 'FLUX.2 klein — качественнее' }
+  schnell: { id: '@cf/black-forest-labs/flux-1-schnell', label: 'FLUX.1 schnell' },
+  klein: { id: '@cf/black-forest-labs/flux-2-klein-4b', label: 'FLUX.2 klein' }
 };
 const TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 const DAILY_FREE = 10000;
@@ -40,23 +41,23 @@ function createImages({ store, getCreds }) {
 
   async function cf(modelId, init) {
     const { accountId, token } = getCreds();
-    if (!accountId || !token) { const e = new Error('Укажите Account ID и API-токен Cloudflare в настройках.'); e.code = 'nocreds'; throw e; }
+    if (!accountId || !token) { const e = new Error(L('studio.error.noCreds')); e.code = 'nocreds'; throw e; }
     const url = 'https://api.cloudflare.com/client/v4/accounts/' + encodeURIComponent(accountId) + '/ai/run/' + modelId;
     const headers = Object.assign({ Authorization: 'Bearer ' + token }, init.headers || {});
     let res;
     try { res = await fetch(url, Object.assign({}, init, { method: 'POST', headers })); }
-    catch (e) { throw new Error('Нет связи с Cloudflare: ' + e.message + '. Проверьте интернет или VPN.'); }
+    catch (e) { throw new Error(L('studio.error.network', { message: e.message })); }
     const ct = res.headers.get('content-type') || '';
     if (!res.ok) {
-      let msg = 'Cloudflare ответил ' + res.status;
+      let msg = L('studio.error.status', { status: res.status });
       try { const j = await res.json(); const er = j.errors && j.errors[0]; if (er) msg += ': ' + (er.message || JSON.stringify(er)); } catch (e) {}
-      if (res.status === 401 || res.status === 403) msg += '. Проверьте токен и Account ID.';
-      if (res.status === 429) msg = 'Дневной бесплатный лимит Cloudflare исчерпан или слишком много запросов. Лимит обновится в 03:00 по Москве.';
+      if (res.status === 401 || res.status === 403) msg += L('studio.error.checkToken');
+      if (res.status === 429) msg = L('studio.error.rateLimit');
       throw new Error(msg);
     }
     if (ct.startsWith('image/')) return { buffer: Buffer.from(await res.arrayBuffer()) };
     const j = await res.json();
-    if (j && j.success === false) throw new Error((j.errors && j.errors[0] && j.errors[0].message) || 'Ошибка Cloudflare');
+    if (j && j.success === false) throw new Error((j.errors && j.errors[0] && j.errors[0].message) || L('studio.error.generic'));
     return { json: j };
   }
 
@@ -87,7 +88,7 @@ function createImages({ store, getCreds }) {
 
   async function generate({ prompt, model, width, height, steps, seed, enhance }) {
     prompt = String(prompt || '').trim();
-    if (!prompt) throw new Error('Опишите, что нарисовать.');
+    if (!prompt) throw new Error(L('studio.error.emptyPrompt'));
     model = MODELS[model] ? model : 'schnell';
     width = Math.max(256, Math.min(1920, parseInt(width, 10) || 1024));
     height = Math.max(256, Math.min(1920, parseInt(height, 10) || 1024));
@@ -111,7 +112,7 @@ function createImages({ store, getCreds }) {
     if (!buf && r.json) {
       const res = r.json.result != null ? r.json.result : r.json;
       const b64 = typeof res === 'string' ? res : (res.image || res.images && res.images[0]);
-      if (!b64) throw new Error('Cloudflare не вернул изображение.');
+      if (!b64) throw new Error(L('studio.error.noImage'));
       buf = Buffer.from(String(b64).replace(/^data:image\/\w+;base64,/, ''), 'base64');
     }
     const id = crypto.randomUUID();

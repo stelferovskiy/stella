@@ -1,4 +1,6 @@
 /* Задачи по расписанию: запускаются, пока Stella открыта (в том числе свёрнутой в трей). */
+const { L } = require('./i18n');
+
 function createScheduler({ store, runner, broadcast, notify }) {
   let timer = null;
 
@@ -8,13 +10,13 @@ function createScheduler({ store, runner, broadcast, notify }) {
 
   function runTask(task) {
     const settings = store.getSettings();
-    const chat = store.createChat({ agent: task.agent || 'claude', cwd: task.cwd || settings.currentProject, title: 'По расписанию: ' + task.name, scheduled: true });
+    const chat = store.createChat({ agent: task.agent || 'claude', cwd: task.cwd || settings.currentProject, title: L('schedule.chatTitle', { name: task.name }), scheduled: true });
     broadcast('chats:changed', store.saveChat(chat));
-    notify({ title: 'Stella запускает задачу', body: task.name, chatId: chat.id, onlyIfHidden: true });
+    notify({ title: L('notify.taskStarting'), body: task.name, chatId: chat.id, onlyIfHidden: true });
     runner.send(chat.id, { text: task.prompt, attachments: [], mode: task.mode || undefined }).catch(() => {});
     // вернуть сохранённое название: send переименовывает пустой чат по первому сообщению
     const c = store.getChat(chat.id);
-    if (c) { c.title = 'По расписанию: ' + task.name; store.saveChat(c); }
+    if (c) { c.title = L('schedule.chatTitle', { name: task.name }); store.saveChat(c); }
     return chat.id;
   }
 

@@ -2,6 +2,7 @@
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const { StringDecoder } = require('string_decoder');
+const { L } = require('../i18n');
 
 class CodexClient extends EventEmitter {
   constructor({ command, args, cwd, env, timeout = 30000 }) {
@@ -14,12 +15,12 @@ class CodexClient extends EventEmitter {
     const decoder = new StringDecoder('utf8'); let buffer = '';
     const parse = (line) => {
       if (!line.trim()) return;
-      let m; try { m = JSON.parse(line); } catch (_) { this.emit('warning', 'Некорректное сообщение app-server'); return; }
+      let m; try { m = JSON.parse(line); } catch (_) { this.emit('warning', L('codex.badMessage')); return; }
       if (m.method) this.emit(m.id != null ? 'request' : 'notification', m);
       else if (m.id != null) {
         const p = this.pending.get(m.id); if (!p) return;
         this.pending.delete(m.id); clearTimeout(p.timer);
-        if (m.error) { const err = new Error(m.error.message || 'Ошибка Codex RPC'); err.code = m.error.code; err.data = m.error.data; p.reject(err); }
+        if (m.error) { const err = new Error(m.error.message || L('codex.rpcError')); err.code = m.error.code; err.data = m.error.data; p.reject(err); }
         else p.resolve(m.result);
       }
     };
@@ -30,7 +31,7 @@ class CodexClient extends EventEmitter {
     this.child.stdin.on('error', (err) => this.fail(err));
     this.child.on('error', (err) => this.fail(err));
     this.child.on('close', (code, signal) => {
-      const err = new Error('Codex app-server завершился: ' + (signal || code) + (this.stderr ? '\n' + this.stderr : ''));
+      const err = new Error(L('codex.exited', { code: signal || code }) + (this.stderr ? '\n' + this.stderr : ''));
       this.fail(err); this.closed = true; this.emit('closed', err);
     });
     const result = await this.request('initialize', { clientInfo: { name: 'stella', title: 'Stella', version: require('../../../package.json').version }, capabilities: { experimentalApi: true } });
@@ -38,13 +39,13 @@ class CodexClient extends EventEmitter {
   }
   fail(err) { for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(err); } this.pending.clear(); }
   write(m) {
-    if (this.closed || !this.child || this.child.stdin.destroyed) throw new Error('Codex app-server отключён');
+    if (this.closed || !this.child || this.child.stdin.destroyed) throw new Error(L('codex.disconnected'));
     this.child.stdin.write(JSON.stringify(m) + '\n');
   }
   request(method, params, timeout = this.timeout) {
     return new Promise((resolve, reject) => {
       const id = ++this.nextId;
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Истекло время ожидания Codex: ' + method)); }, timeout);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(L('codex.timeout', { method }))); }, timeout);
       this.pending.set(id, { resolve, reject, timer });
       try { this.write({ id, method, params }); } catch (err) { clearTimeout(timer); this.pending.delete(id); reject(err); }
     });
@@ -55,7 +56,7 @@ class CodexClient extends EventEmitter {
   async close() {
     if (this.closePromise) return this.closePromise;
     if (!this.child || this.closed) return;
-    this.closed = true; this.fail(new Error('Codex app-server отключён'));
+    this.closed = true; this.fail(new Error(L('codex.disconnected')));
     const child = this.child;
     this.closePromise = new Promise((resolve) => {
       let timer, fallback;

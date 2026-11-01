@@ -4,13 +4,14 @@ const path = require('path');
 const crypto = require('crypto');
 const { CodexClient } = require('./providers/codex-client');
 const { launchSpec } = require('./providers/codex');
+const { L } = require('./i18n');
 const MAX_BYTES = 64 * 1024 * 1024;
 const fail = (message, code) => Object.assign(new Error(message), { code });
 function extension(buf) {
   if (buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return '.png';
   if (buf.length > 3 && buf[0] === 255 && buf[1] === 216 && buf[2] === 255) return '.jpg';
   if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return '.webp';
-  throw fail('Получены некорректные данные изображения.', 'invalid-image');
+  throw fail(L('gptImages.error.invalidData'), 'invalid-image');
 }
 function createGptImages({ store, broadcast = () => {}, clientFactory } = {}) {
   const dir = path.join(store.dir, 'gpt-images'); fs.mkdirSync(dir, { recursive: true });
@@ -30,7 +31,7 @@ function createGptImages({ store, broadcast = () => {}, clientFactory } = {}) {
     last = { ...ev, active: !['done', 'error', 'stopped'].includes(stage) }; broadcast('gpt-images:progress', ev);
   }
   function list() { return { items: index.filter((x) => managed(x.file)), active: !!active, status: status() }; }
-  function get(id) { const item = index.find((x) => x.id === id); if (!item || !managed(item.file)) throw fail('Изображение не найдено.', 'not-found'); return item; }
+  function get(id) { const item = index.find((x) => x.id === id); if (!item || !managed(item.file)) throw fail(L('gptImages.error.notFound'), 'not-found'); return item; }
   function remove(id) {
     const item = get(id); fs.unlinkSync(item.file); index = index.filter((x) => x.id !== id); writeIndex(); return index.filter((x) => managed(x.file));
   }
@@ -46,16 +47,16 @@ function createGptImages({ store, broadcast = () => {}, clientFactory } = {}) {
   }
   async function generate({ prompt, size = 'auto', transparent = false } = {}) {
     prompt = String(prompt || '').trim();
-    if (!prompt) throw fail('Опишите изображение.', 'empty-prompt');
-    if (prompt.length > 32000) throw fail('Описание слишком длинное: максимум 32 000 символов.', 'prompt-length');
-    if (!['auto', 'square', 'landscape', 'portrait'].includes(size)) throw fail('Неизвестный формат изображения.', 'invalid-size');
-    if (active) throw fail('Дождитесь текущей генерации или остановите её.', 'busy');
+    if (!prompt) throw fail(L('gptImages.error.emptyPrompt'), 'empty-prompt');
+    if (prompt.length > 32000) throw fail(L('gptImages.error.promptLength'), 'prompt-length');
+    if (!['auto', 'square', 'landscape', 'portrait'].includes(size)) throw fail(L('gptImages.error.invalidSize'), 'invalid-size');
+    if (active) throw fail(L('gptImages.error.busy'), 'busy');
     const entry = { id: crypto.randomUUID(), stage: 'thinking', abort: new AbortController(), client: null, threadId: null, turnId: null, finish: null };
     active = entry;
     let timer, stopTimer, usage = null, failure = null, lastText = '', candidate = null;
     const terminal = new Promise((resolve) => { entry.finish = resolve; });
     const stopped = () => entry.abort.signal.aborted;
-    const checkStop = () => { if (stopped()) throw fail('Генерация остановлена.', 'stopped'); };
+    const checkStop = () => { if (stopped()) throw fail(L('gptImages.error.stopped'), 'stopped'); };
     progress(entry, 'thinking');
     try {
       const c = entry.client = newClient();
@@ -78,15 +79,15 @@ function createGptImages({ store, broadcast = () => {}, clientFactory } = {}) {
           if (store.getUsage) broadcast('usage:changed', store.getUsage());
         }
         if (m.method === 'thread/tokenUsage/updated') { const u = p.tokenUsage?.last; if (u) usage = { input: u.inputTokens || 0, output: u.outputTokens || 0, cost: 0 }; }
-        if (m.method === 'error' && !p.willRetry) failure = p.error?.message || 'Ошибка генерации OpenAI.';
+        if (m.method === 'error' && !p.willRetry) failure = p.error?.message || L('gptImages.error.openai');
         if (m.method === 'item/started' && p.item?.type === 'imageGeneration') progress(entry, 'generating');
         if (m.method === 'item/completed') {
           const it = p.item || {};
           if (it.type === 'agentMessage' && it.text) lastText = it.text;
           if (it.type === 'imageGeneration') {
-            if (it.failure?.type === 'usageLimitExceeded') failure = 'Лимит генерации изображений исчерпан.' + (it.failure.resetsAt ? ' Сброс: ' + new Date(it.failure.resetsAt * 1000).toLocaleString() : '');
+            if (it.failure?.type === 'usageLimitExceeded') failure = it.failure.resetsAt ? L('gptImages.error.limitResets', { when: new Date(it.failure.resetsAt * 1000).toLocaleString(L('locale')) }) : L('gptImages.error.limit');
             else if (it.status === 'completed' && (it.result || it.savedPath)) candidate = it;
-            else if (it.status === 'failed') failure = 'OpenAI не смог создать изображение.';
+            else if (it.status === 'failed') failure = L('gptImages.error.failed');
           }
         }
         if (m.method === 'turn/completed') entry.finish(p.turn);
@@ -96,12 +97,12 @@ function createGptImages({ store, broadcast = () => {}, clientFactory } = {}) {
         clearTimeout(stopTimer); stopTimer = setTimeout(() => { entry.finish({ status: 'interrupted' }); c.close().catch(() => {}); }, 1800);
       };
       entry.abort.signal.addEventListener('abort', cancel, { once: true });
-      timer = setTimeout(() => { failure = 'Превышено время ожидания генерации. Попробуйте ещё раз.'; entry.abort.abort(); }, 5 * 60 * 1000);
+      timer = setTimeout(() => { failure = L('gptImages.error.timeout'); entry.abort.abort(); }, 5 * 60 * 1000);
       await c.start(); checkStop();
       const account = await c.request('account/read', { refreshToken: false }); checkStop();
-      if (!account.account || account.account.type !== 'chatgpt') throw fail('Войдите в Codex через аккаунт ChatGPT для генерации изображений.', 'login-codex');
+      if (!account.account || account.account.type !== 'chatgpt') throw fail(L('gptImages.error.login'), 'login-codex');
       const capabilities = await c.request('modelProvider/capabilities/read', {}); checkStop();
-      if (!capabilities.imageGeneration) throw fail('Генерация изображений недоступна у текущего провайдера Codex. Обновите Codex или проверьте подключение.', 'unsupported');
+      if (!capabilities.imageGeneration) throw fail(L('gptImages.error.unsupported'), 'unsupported');
       const model = store.getSettings()?.chatgpt?.model;
       const thread = await c.request('thread/start', {
         cwd: dir, sandbox: 'read-only', approvalPolicy: 'on-request', approvalsReviewer: 'user', ephemeral: true,
@@ -113,15 +114,15 @@ function createGptImages({ store, broadcast = () => {}, clientFactory } = {}) {
       const turn = await c.request('turn/start', { threadId: entry.threadId, input, effort: 'low' }, 60000); entry.turnId = turn.turn.id;
       if (stopped()) cancel();
       const result = await terminal; checkStop();
-      if (result.status !== 'completed') throw fail(failure || result.error?.message || 'Генерация завершилась с ошибкой.', 'generation-failed');
-      if (!candidate) throw fail(failure || lastText || 'OpenAI не вернул изображение. Попробуйте уточнить описание.', 'no-image');
+      if (result.status !== 'completed') throw fail(failure || result.error?.message || L('gptImages.error.generic'), 'generation-failed');
+      if (!candidate) throw fail(failure || lastText || L('gptImages.error.noImage'), 'no-image');
       progress(entry, 'saving');
       let buffer;
       if (candidate.result) {
-        if (candidate.result.length > MAX_BYTES * 4 / 3 + 10) throw fail('Размер изображения превышает допустимый.', 'image-size');
+        if (candidate.result.length > MAX_BYTES * 4 / 3 + 10) throw fail(L('gptImages.error.tooLarge'), 'image-size');
         buffer = Buffer.from(candidate.result.replace(/^data:image\/\w+;base64,/, ''), 'base64');
       } else {
-        const stat = fs.statSync(candidate.savedPath); if (!stat.isFile() || stat.size > MAX_BYTES) throw fail('Недопустимый файл изображения.', 'image-size');
+        const stat = fs.statSync(candidate.savedPath); if (!stat.isFile() || stat.size > MAX_BYTES) throw fail(L('gptImages.error.badFile'), 'image-size');
         buffer = fs.readFileSync(candidate.savedPath);
       }
       const ext = extension(buffer), file = path.join(dir, entry.id + ext);
@@ -132,7 +133,7 @@ function createGptImages({ store, broadcast = () => {}, clientFactory } = {}) {
       if (usage && store.addUsage) { store.addUsage('chatgpt', usage); if (store.getUsage) broadcast('usage:changed', store.getUsage()); }
       cachedAvailability = null; progress(entry, 'done', null, item); return item;
     } catch (err) {
-      if (stopped()) { const e = fail(failure || 'Генерация остановлена.', failure ? 'timeout' : 'stopped'); progress(entry, failure ? 'error' : 'stopped', e.message); throw e; }
+      if (stopped()) { const e = fail(failure || L('gptImages.error.stopped'), failure ? 'timeout' : 'stopped'); progress(entry, failure ? 'error' : 'stopped', e.message); throw e; }
       progress(entry, 'error', err.message); throw err;
     } finally { clearTimeout(timer); clearTimeout(stopTimer); if (entry.client) await entry.client.close(); if (active === entry) active = null; }
   }

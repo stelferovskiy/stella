@@ -5,6 +5,7 @@ const os = require('os');
 const { createRequire } = require('module');
 const { spawn } = require('child_process');
 const { CodexClient } = require('./codex-client');
+const { L } = require('../i18n');
 function isFile(p) { try { return fs.statSync(p).isFile(); } catch (_) { return false; } }
 function findCodexJs(settings) {
   const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
@@ -16,7 +17,7 @@ function findCodexJs(settings) {
 }
 function launchSpec(settings) {
   const entry = findCodexJs(settings);
-  if (!entry) throw Object.assign(new Error('Codex не найден. Установите его: npm.cmd install -g @openai/codex'), { action: 'install-codex' });
+  if (!entry) throw Object.assign(new Error(L('codex.missing')), { action: 'install-codex' });
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1' };
   const args = ['app-server', '--listen', 'stdio://'];
   if (!/\.[cm]?js$/i.test(entry)) return { command: entry, args, env };
@@ -40,7 +41,7 @@ function policyFor(mode, cwd) {
   if (mode === 'danger-full-access') return { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } };
   if (mode === 'read-only') return { approvalPolicy: 'on-request', sandboxPolicy: { type: 'readOnly', networkAccess: false } };
   if (mode === 'workspace-write') return { approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite', writableRoots: [cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false } };
-  throw new Error('Неизвестный режим доступа Codex: ' + mode);
+  throw new Error(L('codex.unknownMode', { mode }));
 }
 async function handleServerRequest(message, { requestApproval, requestUserInput, signal } = {}) {
   const p = message.params || {};
@@ -49,11 +50,11 @@ async function handleServerRequest(message, { requestApproval, requestUserInput,
     case 'item/commandExecution/requestApproval':
     case 'item/fileChange/requestApproval': {
       const files = message.method.includes('fileChange');
-      const a = await ask(files ? 'Изменение файлов' : 'Выполнить команду?', p.command || p.grantRoot || '');
+      const a = await ask(files ? L('codex.approveFiles') : L('codex.approveCommand'), p.command || p.grantRoot || '');
       return { decision: a === 'always' ? 'acceptForSession' : a === 'allow' ? 'accept' : 'decline' };
     }
     case 'item/permissions/requestApproval': {
-      const a = await ask('Дополнительные разрешения', JSON.stringify(p.permissions || {}, null, 2)); const permissions = {};
+      const a = await ask(L('codex.approvePermissions'), JSON.stringify(p.permissions || {}, null, 2)); const permissions = {};
       if (a === 'allow' || a === 'always') for (const k of ['network', 'fileSystem']) if (p.permissions?.[k]) permissions[k] = p.permissions[k];
       return { permissions, scope: a === 'always' ? 'session' : 'turn' };
     }
@@ -71,13 +72,13 @@ async function handleServerRequest(message, { requestApproval, requestUserInput,
       for (const [id, s] of Object.entries(props)) {
         const v = answers[id]?.answers?.[0]; if (v == null || v === '') continue;
         content[id] = s.type === 'boolean' ? v === 'true' : s.type === 'number' || s.type === 'integer' ? Number(v) : v;
-        if (typeof content[id] === 'number' && !Number.isFinite(content[id])) throw new Error('MCP ожидает число: ' + id);
-        if (s.type === 'integer' && !Number.isInteger(content[id])) throw new Error('MCP ожидает целое число: ' + id);
-        if (s.enum && !s.enum.includes(content[id])) throw new Error('Недопустимое значение MCP: ' + id);
+        if (typeof content[id] === 'number' && !Number.isFinite(content[id])) throw new Error(L('codex.mcpNumber', { id }));
+        if (s.type === 'integer' && !Number.isInteger(content[id])) throw new Error(L('codex.mcpInteger', { id }));
+        if (s.enum && !s.enum.includes(content[id])) throw new Error(L('codex.mcpInvalid', { id }));
       }
       return { action: 'accept', content, _meta: null };
     }
-    default: throw new Error('Запрос Codex не поддерживается: ' + message.method);
+    default: throw new Error(L('codex.unsupportedRequest', { method: message.method }));
   }
 }
 async function withClient(settings, action) {
@@ -120,7 +121,7 @@ async function run({ chat, text, attachments = [], settings, emit, emitLive = ()
     const handleRequest = async (m) => {
       if (m.params?.threadId && !threadId) { startupEvents.push(['request', m]); return; }
       try {
-        if (m.params?.threadId && m.params.threadId !== threadId) throw new Error('Запрос другого чата');
+        if (m.params?.threadId && m.params.threadId !== threadId) throw new Error(L('codex.otherChat'));
         const tag = (fn) => fn ? (p) => fn({ ...p, serverRequestId: String(m.id) }) : undefined;
         const result = await handleServerRequest(m, { requestApproval: tag(requestApproval), requestUserInput: tag(requestUserInput), signal });
         if (!client.closed && !settled) client.respond(m.id, result);
@@ -139,7 +140,7 @@ async function run({ chat, text, attachments = [], settings, emit, emitLive = ()
     if (signal.aborted) return { status: 'stopped' };
     let prompt = text || ''; const files = attachments.filter((a) => a.kind !== 'image');
     if (files.length) prompt += '\n\nAttached files (read them when relevant):\n' + files.map((a) => '- ' + a.path).join('\n');
-    const input = [{ type: 'text', text: prompt.trim() ? prompt : 'Посмотри вложения.', text_elements: [] }, ...attachments.filter((a) => a.kind === 'image').map((a) => ({ type: 'localImage', path: a.path }))];
+    const input = [{ type: 'text', text: prompt.trim() ? prompt : L('prompt.seeAttachments'), text_elements: [] }, ...attachments.filter((a) => a.kind === 'image').map((a) => ({ type: 'localImage', path: a.path }))];
     emit({ t: 'state', s: 'thinking' });
     const turn = await client.request('turn/start', { threadId, input, cwd: chat.cwd, ...policy, approvalsReviewer: 'user', ...(cfg.model ? { model: cfg.model } : {}), ...(cfg.effort ? { effort: cfg.effort } : {}) }, 60000);
     turnId = turn.turn.id; if (signal.aborted) abort();

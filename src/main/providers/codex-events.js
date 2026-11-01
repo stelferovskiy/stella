@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { L } = require('../i18n');
 
 const MAX_FILE = 300000;
 const short = (value, limit = 20000) => String(value ?? '').slice(0, limit);
@@ -86,7 +87,7 @@ function createEventAdapter({ emit = () => {}, emitLive = () => {}, cwd = proces
     const previous = commands.get(it.id) || { command: '', output: '' };
     const next = { command: it.command ?? previous.command, output: tail(it.aggregatedOutput || previous.output) };
     commands.set(it.id, next);
-    tool(id, 'Shell', 'Command: ' + short(next.command, 90), next.command, done, next.output, it.status === 'failed' || it.status === 'declined' || (it.exitCode != null && it.exitCode !== 0), true);
+    tool(id, 'Shell', L('tool.command', { text: short(next.command, 90) }), next.command, done, next.output, it.status === 'failed' || it.status === 'declined' || (it.exitCode != null && it.exitCode !== 0), true);
     emitLive({ t: 'cmd', id, command: next.command, output: short(next.output), done, exitCode: it.exitCode ?? null });
   }
   function files(it, done) {
@@ -103,7 +104,7 @@ function createEventAdapter({ emit = () => {}, emitLive = () => {}, cwd = proces
         if (text != null) emitLive({ t: 'code', id: key, tool: 'Replay', path: target, old: before.get(key) || '', text, done: true, replay: true });
       }
     });
-    tool(id, 'Files', 'File changes (' + changes.length + ')', changes.map(c => (c.kind?.type || 'update') + ': ' + c.path + '\n' + (c.diff || '')).join('\n'), done, '', ['failed', 'declined'].includes(it.status));
+    tool(id, 'Files', L('tool.fileChanges', { n: changes.length }), changes.map(c => (c.kind?.type || 'update') + ': ' + c.path + '\n' + (c.diff || '')).join('\n'), done, '', ['failed', 'declined'].includes(it.status));
     if (done) emit({ t: 'files', paths });
   }
   function item(it, done) {
@@ -126,12 +127,12 @@ function createEventAdapter({ emit = () => {}, emitLive = () => {}, cwd = proces
       case 'dynamicToolCall':
         tool(id, 'DynamicTool', [it.namespace, it.tool].filter(Boolean).join(' · '), json(it.arguments), done, json(it.contentItems), it.success === false || it.status === 'failed'); break;
       case 'webSearch':
-        tool(id, 'WebSearch', 'Search: ' + it.query, json(it.action), done, json(it.results)); break;
+        tool(id, 'WebSearch', L('tool.webSearch', { query: it.query }), json(it.action), done, json(it.results)); break;
       case 'collabAgentToolCall':
         tool(id, 'Agent', it.tool, [it.prompt, ...(it.receiverThreadIds || [])].filter(Boolean).join('\n'), done, json(it.agentsStates), it.status === 'failed'); break;
       case 'subAgentActivity':
-        tool(id, 'Agent', 'Agent: ' + it.kind, [it.agentThreadId, it.agentPath, it.model].filter(Boolean).join('\n'), done); break;
-      case 'contextCompaction': tool(id, 'Compaction', 'Context compaction', '', done); break;
+        tool(id, 'Agent', L('tool.agent', { text: it.kind }), [it.agentThreadId, it.agentPath, it.model].filter(Boolean).join('\n'), done); break;
+      case 'contextCompaction': tool(id, 'Compaction', L('tool.compaction'), '', done); break;
       default: break;
     }
   }
@@ -171,8 +172,8 @@ function createEventAdapter({ emit = () => {}, emitLive = () => {}, cwd = proces
         break;
       }
       case 'account/rateLimits/updated': onRateLimits(p.rateLimits); break;
-      case 'turn/plan/updated': tool('cx-plan-' + p.turnId, 'Plan', 'Plan', [p.explanation, ...(p.plan || []).map(s => '[' + s.status + '] ' + s.step)].filter(Boolean).join('\n'), false); break;
-      case 'thread/compacted': tool('cx-compaction-' + p.turnId, 'Compaction', 'Context compacted', '', true); break;
+      case 'turn/plan/updated': tool('cx-plan-' + p.turnId, 'Plan', L('tool.todo'), [p.explanation, ...(p.plan || []).map(s => '[' + s.status + '] ' + s.step)].filter(Boolean).join('\n'), false); break;
+      case 'thread/compacted': tool('cx-compaction-' + p.turnId, 'Compaction', L('tool.compacted'), '', true); break;
       case 'turn/diff/updated': emitLive({ t: 'code', id: 'cx-diff-' + p.turnId, tool: 'Diff', path: '', old: '', text: p.diff || '', done: false, replay: false }); break;
       case 'warning': case 'guardianWarning': case 'configWarning': case 'deprecationNotice':
       case 'model/rerouted': case 'model/verification': case 'model/safetyBuffering/updated':

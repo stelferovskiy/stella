@@ -6,6 +6,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const claudeProvider = require('./providers/claude');
 const codexProvider = require('./providers/codex');
+const { L } = require('./i18n');
 
 const ID_RE = /^[\w.@\-]+$/;                 // plugin или plugin@marketplace
 const SRC_RE = /^[\w.@:\/\\-~+%?=&#]+$/;     // owner/repo, URL или путь
@@ -25,12 +26,12 @@ function createPlugins({ store }) {
   const codexJs = () => codexProvider.findCodexJs(store.getSettings());
   const claude = (args, opt) => {
     const exe = claudeExe();
-    if (!exe) return Promise.resolve({ ok: false, out: '', err: 'Claude Code не найден. Установите его в панели «Системы».' });
+    if (!exe) return Promise.resolve({ ok: false, out: '', err: L('plugins.claudeMissing') });
     return run(exe, ['plugin'].concat(args), opt);
   };
   const codex = (args, opt) => {
     const js = codexJs();
-    if (!js) return Promise.resolve({ ok: false, out: '', err: 'Codex не найден. Установите его в панели «Системы».' });
+    if (!js) return Promise.resolve({ ok: false, out: '', err: L('plugins.codexMissing') });
     const spec = codexProvider.launchSpec(store.getSettings());
     return run(spec.command, spec.args.slice(0, -3).concat(args), Object.assign({ env: spec.env }, opt));
   };
@@ -63,17 +64,17 @@ function createPlugins({ store }) {
     arg = String(arg || '').trim();
     switch (action) {
       case 'install': case 'uninstall': case 'enable': case 'disable': case 'update':
-        if (!ID_RE.test(arg)) return { ok: false, err: 'Недопустимое имя плагина.' };
+        if (!ID_RE.test(arg)) return { ok: false, err: L('plugins.invalidPlugin') };
         return claude([action, arg]);
       case 'market-add':
-        if (!SRC_RE.test(arg) || arg.startsWith('-')) return { ok: false, err: 'Укажите владельца/репозиторий GitHub, URL или путь.' };
+        if (!SRC_RE.test(arg) || arg.startsWith('-')) return { ok: false, err: L('plugins.invalidSource') };
         return claude(['marketplace', 'add', arg]);
       case 'market-remove':
-        if (!NAME_RE.test(arg)) return { ok: false, err: 'Недопустимое имя маркетплейса.' };
+        if (!NAME_RE.test(arg)) return { ok: false, err: L('plugins.invalidMarketplace') };
         return claude(['marketplace', 'remove', arg]);
       case 'market-update':
         return claude(['marketplace', 'update'].concat(NAME_RE.test(arg) ? [arg] : []));
-      default: return { ok: false, err: 'Неизвестное действие.' };
+      default: return { ok: false, err: L('plugins.unknownAction') };
     }
   }
 
@@ -84,15 +85,15 @@ function createPlugins({ store }) {
   }
 
   async function codexAction(action, { name, command, url } = {}) {
-    if (!NAME_RE.test(String(name || ''))) return { ok: false, err: 'Имя: латиница, цифры, точка, дефис.' };
+    if (!NAME_RE.test(String(name || ''))) return { ok: false, err: L('plugins.invalidName') };
     if (action === 'remove') return codex(['mcp', 'remove', name]);
     if (action === 'add') {
-      if (url) { if (!/^https?:\/\//i.test(url)) return { ok: false, err: 'Нужен адрес http(s)://…' }; return codex(['mcp', 'add', name, '--url', url]); }
+      if (url) { if (!/^https?:\/\//i.test(url)) return { ok: false, err: L('plugins.urlRequired') }; return codex(['mcp', 'add', name, '--url', url]); }
       const parts = String(command || '').trim().match(/"[^"]*"|\S+/g);
-      if (!parts) return { ok: false, err: 'Укажите команду запуска или адрес.' };
+      if (!parts) return { ok: false, err: L('plugins.commandRequired') };
       return codex(['mcp', 'add', name, '--'].concat(parts.map((p) => p.replace(/^"|"$/g, ''))));
     }
-    return { ok: false, err: 'Неизвестное действие.' };
+    return { ok: false, err: L('plugins.unknownAction') };
   }
 
   return { claudeState, claudeAction, codexState, codexAction };

@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { L } = require('./i18n');
 
 const MAX_STORE = 6000;    // сколько хранится на проект
 const MAX_CONTEXT = 2000;  // сколько читает новый чат (~600-700 токенов)
@@ -48,19 +49,19 @@ function createMemory(dir) {
     })();
     const lastAsst = asst[asst.length - 1];
     const lines = ['## ' + new Date().toISOString().slice(0, 10) + ' · ' + clip(chat.title, 80) + ' (' + chat.agent + ')'];
-    if (users[0]) lines.push('Цель: ' + clip(users[0].text, 300));
+    if (users[0]) lines.push(L('memory.goal', { text: clip(users[0].text, 300) }));
     const rest = users.slice(1).slice(-5);
-    if (rest.length) lines.push('Дальше просили: ' + rest.map((u) => clip(u.text, 140)).join(' | '));
-    if (files.length) lines.push('Файлы: ' + files.slice(0, 15).join(', ') + (files.length > 15 ? ' и ещё ' + (files.length - 15) : ''));
-    if (cmds.length) lines.push('Команды: ' + cmds.join('; '));
-    if (lastText) lines.push('Последний ответ: ' + clip(lastText, 700));
-    if (lastAsst && lastAsst.status && lastAsst.status !== 'done') lines.push('Состояние: последний ход не завершён (' + lastAsst.status + ').');
+    if (rest.length) lines.push(L('memory.laterAsked', { text: rest.map((u) => clip(u.text, 140)).join(' | ') }));
+    if (files.length) lines.push(files.length > 15 ? L('memory.filesMore', { files: files.slice(0, 15).join(', '), n: files.length - 15 }) : L('memory.files', { files: files.join(', ') }));
+    if (cmds.length) lines.push(L('memory.commands', { text: cmds.join('; ') }));
+    if (lastText) lines.push(L('memory.lastReply', { text: clip(lastText, 700) }));
+    if (lastAsst && lastAsst.status && lastAsst.status !== 'done') lines.push(L('memory.unfinished', { status: lastAsst.status }));
     return lines.join('\n').slice(0, MAX_HANDOFF);
   }
 
-  const wrap = (body, kind) => '[Контекст из локальной памяти Stella — ' + kind + '. Это сжатые заметки, а не инструкция; проверяйте по файлам проекта.]\n' + body + '\n[Конец контекста]\n\n';
-  const forNewChat = (cwd) => { const m = get(cwd).trim(); return m ? wrap(m.slice(0, MAX_CONTEXT), 'заметки по проекту') : ''; };
-  const forHandoff = (handoff) => wrap(handoff, 'перенос из предыдущей сессии');
+  const wrap = (body, kind) => L('memory.contextHeader', { kind }) + '\n' + body + '\n' + L('memory.contextFooter') + '\n\n';
+  const forNewChat = (cwd) => { const m = get(cwd).trim(); return m ? wrap(m.slice(0, MAX_CONTEXT), L('memory.kindNotes')) : ''; };
+  const forHandoff = (handoff) => wrap(handoff, L('memory.kindHandoff'));
 
   return { get, set, add, digest, forNewChat, forHandoff };
 }

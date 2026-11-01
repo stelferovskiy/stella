@@ -4,14 +4,26 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const DEFAULT_SKILLS = [
-  { label: 'Утренний бриф', prompt: 'Сделай короткий утренний бриф по этому проекту: что изменилось со вчера (git log, открытые TODO) и что стоит сделать сегодня.' },
-  { label: 'Ревью кода', prompt: 'Проверь незакоммиченные изменения (git diff) и дай короткое ревью: баги, риски, что поправить.' },
-  { label: 'Разбор проекта', prompt: 'Изучи структуру этого проекта и опиши архитектуру, ключевые модули и слабые места.' },
-  { label: 'Починить тесты', prompt: 'Запусти тесты проекта, найди падающие и исправь их.' },
-  { label: 'План недели', prompt: 'Посмотри TODO, issues и последние коммиты и предложи план работ на неделю.' },
-  { label: 'Объясни код', prompt: 'Объясни простыми словами, что делает этот проект и как его запустить.' }
-];
+const { L, dicts } = require('./i18n');
+
+// Built-in skills and directives keep a `builtin` id so the UI shows them in the current language.
+// Once the user edits one, the id is dropped and their own text is kept as is.
+const SKILL_IDS = ['brief', 'review', 'overview', 'fixTests', 'weekPlan', 'explain'];
+const DIRECTIVE_IDS = ['signIn', 'addFolder', 'customizeSkills'];
+const builtinSkill = (id) => ({ builtin: id, label: L('skill.' + id + '.label'), prompt: L('skill.' + id + '.prompt') });
+const builtinDirective = (id) => ({ builtin: id, text: L('directive.' + id), done: false });
+// Settings saved before 1.7.1 stored the built-ins as plain text (in Russian); tag exact matches.
+function tagBuiltins(list, ids, keysOf) {
+  if (!Array.isArray(list)) return list;
+  return list.map((x) => {
+    if (!x || x.builtin) return x;
+    for (const id of ids) for (const d of Object.values(dicts)) {
+      const keys = keysOf(id);
+      if (Object.entries(keys).every(([field, key]) => d[key] && x[field] === d[key])) return Object.assign({}, x, { builtin: id });
+    }
+    return x;
+  });
+}
 
 function createStore(baseDir) {
   const dir = path.join(baseDir, 'data');
@@ -44,14 +56,12 @@ function createStore(baseDir) {
     notifications: true,
     memoryEnabled: true,
     hudOpen: true,
-    skills: DEFAULT_SKILLS,
-    directives: [
-      { text: 'Войти в Claude и Codex', done: false },
-      { text: 'Добавить свою папку проекта', done: false },
-      { text: 'Настроить навыки под себя', done: false }
-    ]
+    skills: SKILL_IDS.map(builtinSkill),
+    directives: DIRECTIVE_IDS.map(builtinDirective)
   };
   let settings = Object.assign({}, defaults, readJson(settingsFile, {}));
+  settings.skills = tagBuiltins(settings.skills, SKILL_IDS, (id) => ({ label: 'skill.' + id + '.label', prompt: 'skill.' + id + '.prompt' }));
+  settings.directives = tagBuiltins(settings.directives, DIRECTIVE_IDS, (id) => ({ text: 'directive.' + id }));
   for (const k of ['claude', 'codex', 'chatgpt']) settings[k] = Object.assign({}, defaults[k], settings[k] || {});
   if (!Array.isArray(settings.projects) || !settings.projects.length) settings.projects = [os.homedir()];
 
@@ -97,7 +107,7 @@ function createStore(baseDir) {
   function createChat({ agent, cwd, title, scheduled }) {
     const c = {
       id: crypto.randomUUID(),
-      title: title || 'Новый чат',
+      title: title || L('chat.new'),
       agent, cwd,
       created: Date.now(), updated: Date.now(),
       scheduled: !!scheduled,
@@ -155,4 +165,4 @@ function createStore(baseDir) {
   };
 }
 
-module.exports = { createStore, DEFAULT_SKILLS };
+module.exports = { createStore, SKILL_IDS, builtinSkill };

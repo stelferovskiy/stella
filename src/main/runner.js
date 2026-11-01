@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const reducer = require('../shared/reducer');
+const { L } = require('./i18n');
 const claude = require('./providers/claude');
 const codex = require('./providers/codex');
 const openai = require('./providers/openai');
@@ -14,7 +15,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
 
   function makeTitle(text) {
     const t = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!t) return 'Новый чат';
+    if (!t) return L('chat.new');
     return t.length > 52 ? t.slice(0, 50).trim() + '…' : t;
   }
 
@@ -43,9 +44,9 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
   }
 
   async function send(chatId, { text, attachments, mode }) {
-    if (active.has(chatId)) throw new Error('Агент ещё отвечает в этом чате');
+    if (active.has(chatId)) throw new Error(L('error.agentBusy'));
     const chat = store.getChat(chatId);
-    if (!chat) throw new Error('Чат не найден');
+    if (!chat) throw new Error(L('error.chatNotFound'));
     const settings = store.getSettings();
 
     const atts = prepareAttachments(chatId, attachments);
@@ -110,9 +111,9 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
       const finish = (answer) => { abortController.signal.removeEventListener('abort', cancel); entry.requests.delete(serverRequestId); resolve(answer); };
       entry.approvals.set(reqId, finish);
       if (serverRequestId != null) entry.requests.set(serverRequestId, cancel);
-      emit({ t: 'approval', reqId, title, detail: reason ? detail + (detail ? '\n\n' : '') + 'Причина: ' + reason : detail });
+      emit({ t: 'approval', reqId, title, detail: reason ? detail + (detail ? '\n\n' : '') + L('approval.reason', { reason }) : detail });
       setState(chatId, 'waiting');
-      notify({ title: 'Stella ждёт подтверждения', body: title, chatId, onlyIfHidden: true });
+      notify({ title: L('notify.waitingApproval'), body: title, chatId, onlyIfHidden: true });
       abortController.signal.addEventListener('abort', cancel, { once: true });
     });
 
@@ -128,7 +129,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
       if (serverRequestId != null) entry.requests.set(serverRequestId, cancel);
       emit({ t: 'user-input', reqId, questions });
       setState(chatId, 'waiting');
-      notify({ title: 'Stella ждёт ответа', body: questions.map((q) => q.question).join('\n'), chatId, onlyIfHidden: true });
+      notify({ title: L('notify.waitingInput'), body: questions.map((q) => q.question).join('\n'), chatId, onlyIfHidden: true });
       abortController.signal.addEventListener('abort', cancel, { once: true });
     });
     const onRequestResolved = (id) => { const cancel = entry.requests.get(id); if (cancel) cancel(); if (!entry.approvals.size && !entry.inputs.size) setState(chatId, 'thinking'); };
@@ -152,7 +153,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
         }
       }
     } catch (err) {
-      emit({ t: 'error', text: 'Сбой: ' + (err && err.message || err) });
+      emit({ t: 'error', text: L('error.failure', { message: err && err.message || err }) });
       result = { status: 'error' };
     }
 
@@ -178,10 +179,10 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
     broadcast('chats:changed', store.saveChat(chat));
 
     if (status === 'done') {
-      const firstText = (msg.blocks.find((b) => b.type === 'text') || {}).text || 'Готово';
+      const firstText = (msg.blocks.find((b) => b.type === 'text') || {}).text || L('notify.done');
       notify({ title: 'Stella · ' + chat.title, body: firstText.replace(/[#*`>_]/g, '').slice(0, 140), chatId, onlyIfHidden: true });
     } else if (status === 'error') {
-      notify({ title: 'Stella · ошибка', body: chat.title, chatId, onlyIfHidden: true });
+      notify({ title: L('notify.error'), body: chat.title, chatId, onlyIfHidden: true });
     }
     return status;
   }

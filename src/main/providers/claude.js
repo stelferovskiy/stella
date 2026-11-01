@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { pathToFileURL } = require('url');
+const { L } = require('../i18n');
 
 // Claude Agent SDK распространяется Anthropic под собственной (не открытой) лицензией,
 // поэтому Stella его не включает в сборку, а берёт из глобальной установки npm у пользователя.
@@ -43,20 +44,20 @@ function describeTool(name, input) {
   input = input || {};
   const f = input.file_path || input.notebook_path || input.path || '';
   switch (name) {
-    case 'Bash': return { title: 'Команда: ' + short(input.description || input.command, 90), detail: input.command || '' };
-    case 'PowerShell': return { title: 'Команда: ' + short(input.description || input.command, 90), detail: input.command || '' };
-    case 'Read': return { title: 'Читаю ' + path.basename(f), detail: f };
-    case 'Write': return { title: 'Создаю ' + path.basename(f), detail: f };
-    case 'Edit': case 'MultiEdit': return { title: 'Правлю ' + path.basename(f), detail: f };
-    case 'NotebookEdit': return { title: 'Правлю блокнот ' + path.basename(f), detail: f };
-    case 'Glob': return { title: 'Ищу файлы: ' + short(input.pattern, 80), detail: input.path || '' };
-    case 'Grep': return { title: 'Ищу в коде: ' + short(input.pattern, 80), detail: input.path || '' };
-    case 'WebSearch': return { title: 'Поиск в интернете: ' + short(input.query, 80), detail: '' };
-    case 'WebFetch': return { title: 'Открываю страницу', detail: input.url || '' };
-    case 'Task': case 'Agent': return { title: 'Помощник: ' + short(input.description, 80), detail: short(input.prompt, 600) };
+    case 'Bash': return { title: L('tool.command', { text: short(input.description || input.command, 90) }), detail: input.command || '' };
+    case 'PowerShell': return { title: L('tool.command', { text: short(input.description || input.command, 90) }), detail: input.command || '' };
+    case 'Read': return { title: L('tool.read', { file: path.basename(f) }), detail: f };
+    case 'Write': return { title: L('tool.write', { file: path.basename(f) }), detail: f };
+    case 'Edit': case 'MultiEdit': return { title: L('tool.edit', { file: path.basename(f) }), detail: f };
+    case 'NotebookEdit': return { title: L('tool.editNotebook', { file: path.basename(f) }), detail: f };
+    case 'Glob': return { title: L('tool.glob', { pattern: short(input.pattern, 80) }), detail: input.path || '' };
+    case 'Grep': return { title: L('tool.grep', { pattern: short(input.pattern, 80) }), detail: input.path || '' };
+    case 'WebSearch': return { title: L('tool.webSearch', { query: short(input.query, 80) }), detail: '' };
+    case 'WebFetch': return { title: L('tool.webFetch'), detail: input.url || '' };
+    case 'Task': case 'Agent': return { title: L('tool.agent', { text: short(input.description, 80) }), detail: short(input.prompt, 600) };
     case 'TodoWrite': {
       const todos = Array.isArray(input.todos) ? input.todos : [];
-      return { title: 'План задач', detail: todos.map((t) => (t.status === 'completed' ? '[x] ' : t.status === 'in_progress' ? '[>] ' : '[ ] ') + (t.content || t.activeForm || '')).join('\n') };
+      return { title: L('tool.todo'), detail: todos.map((t) => (t.status === 'completed' ? '[x] ' : t.status === 'in_progress' ? '[>] ' : '[ ] ') + (t.content || t.activeForm || '')).join('\n') };
     }
     default: {
       let d = '';
@@ -68,7 +69,7 @@ function describeTool(name, input) {
 
 function toolResultText(content) {
   if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map((c) => (c && c.type === 'text' ? c.text : c && c.type === 'image' ? '[изображение]' : '')).join('\n');
+  if (Array.isArray(content)) return content.map((c) => (c && c.type === 'text' ? c.text : c && c.type === 'image' ? '[image]' : '')).join('\n');
   return '';
 }
 
@@ -111,12 +112,12 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
   emitLive = emitLive || (() => {});
   const exe = findClaudeExe(settings);
   if (!exe) {
-    emit({ t: 'error', text: 'Claude Code не найден на компьютере. Установите его: npm.cmd install -g @anthropic-ai/claude-code', action: 'install-claude' });
+    emit({ t: 'error', text: L('claude.missing'), action: 'install-claude' });
     return { status: 'error' };
   }
   const sdk = loadSdk(settings);
   if (!sdk) {
-    emit({ t: 'error', text: 'Для чата с Claude нужен Claude Agent SDK. Нажмите кнопку ниже — Stella установит его через npm (одна команда, около минуты).', action: 'install-sdk' });
+    emit({ t: 'error', text: L('claude.sdkMissing'), action: 'install-sdk' });
     return { status: 'error' };
   }
   const { query } = await sdk;
@@ -126,8 +127,8 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
   const images = (attachments || []).filter((a) => a.kind === 'image');
   const others = (attachments || []).filter((a) => a.kind !== 'image');
   let fullText = text || '';
-  if (others.length) fullText += '\n\nПрикреплённые файлы:\n' + others.map((a) => '- ' + a.path).join('\n');
-  content.push({ type: 'text', text: fullText || 'Посмотри вложения.' });
+  if (others.length) fullText += '\n\nAttached files (read them when relevant):\n' + others.map((a) => '- ' + a.path).join('\n');
+  content.push({ type: 'text', text: fullText || L('prompt.seeAttachments') });
   for (const im of images) {
     try {
       const data = fs.readFileSync(im.path).toString('base64');
@@ -155,7 +156,7 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
     canUseTool: async (toolName, input, opts) => {
       const d = describeTool(toolName, input);
       const answer = await requestApproval({ title: opts && opts.title ? opts.title : d.title, detail: d.detail, reason: opts && opts.decisionReason });
-      if (answer === 'deny') return { behavior: 'deny', message: 'Пользователь отклонил это действие.' };
+      if (answer === 'deny') return { behavior: 'deny', message: 'The user denied this action.' };
       const res = { behavior: 'allow', updatedInput: input };
       if (answer === 'always' && opts && opts.suggestions) res.updatedPermissions = opts.suggestions;
       return res;
@@ -252,9 +253,9 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
         } else if (m.usage) { input = m.usage.input_tokens || 0; output = m.usage.output_tokens || 0; }
         usage = { input, output, cost: m.total_cost_usd || 0 };
         if (m.subtype !== 'success' || m.is_error) {
-          const errText = (m.errors && m.errors.length ? m.errors.join('\n') : '') || m.result || 'Claude завершил работу с ошибкой.';
+          const errText = (m.errors && m.errors.length ? m.errors.join('\n') : '') || m.result || L('claude.failed');
           const needLogin = /login|log in|api key|auth|credential|unauthori/i.test(errText);
-          emit({ t: 'error', text: needLogin ? 'Claude: нужно войти в аккаунт.\n\n' + errText : errText, action: needLogin ? 'login-claude' : null });
+          emit({ t: 'error', text: needLogin ? L('claude.needLogin') + '\n\n' + errText : errText, action: needLogin ? 'login-claude' : null });
           status = 'error';
           errored = true;
         }
@@ -267,7 +268,7 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
     if (errored) return { status: 'error', usage };
     const t = String(err && err.message || err);
     const needLogin = /login|log in|api key|auth|credential|unauthori/i.test(t);
-    emit({ t: 'error', text: 'Не удалось выполнить запрос к Claude: ' + t, action: needLogin ? 'login-claude' : null });
+    emit({ t: 'error', text: L('claude.requestFailed', { message: t }), action: needLogin ? 'login-claude' : null });
     return { status: 'error', usage };
   }
   finishInput();

@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
+const { L } = require('./i18n');
 
 const BASE = 'https://50community.com/downloads/stella/';
 const INFO_URL = BASE + 'stella.json';
@@ -38,7 +39,7 @@ function createUpdater({ app, dialog, getWindow, broadcast, canInstall, beforeIn
     if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
     await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(dest));
     const hash = crypto.createHash('sha256').update(fs.readFileSync(dest)).digest('hex');
-    if (hash.toLowerCase() !== info.sha256.toLowerCase()) { fs.rmSync(dest, { force: true }); throw new Error('Контрольная сумма не совпала'); }
+    if (hash.toLowerCase() !== info.sha256.toLowerCase()) { fs.rmSync(dest, { force: true }); throw new Error(L('update.checksumMismatch')); }
     return dest;
   }
 
@@ -66,22 +67,22 @@ function createUpdater({ app, dialog, getWindow, broadcast, canInstall, beforeIn
       const info = await fetchInfo();
       // Local preview builds must not downgrade to an older public release.
       if (!newer(info.version, app.getVersion())) {
-        if (!silent) await box({ type: 'info', message: 'Установлена последняя версия (' + app.getVersion() + ').', buttons: ['OK'] });
+        if (!silent) await box({ type: 'info', message: L('update.latest', { version: app.getVersion() }), buttons: ['OK'] });
         return;
       }
-      if (!silent) broadcast('toast', 'Найдена версия ' + info.version + ', скачиваю в фоне…');
+      if (!silent) broadcast('toast', L('update.downloading', { version: info.version }));
       const file = await download(info);
       ready = { version: info.version, file };
       broadcast('update:ready', { version: info.version });
     } catch (e) {
-      if (!silent) await box({ type: 'error', message: 'Не удалось проверить обновления', detail: String(e.message || e), buttons: ['OK'] });
+      if (!silent) await box({ type: 'error', message: L('update.checkFailed'), detail: String(e.message || e), buttons: ['OK'] });
     } finally { busy = false; }
   }
 
   // Кнопка «Перезапустить для обновления»: ставим тихо и перезапускаемся.
   function installNow() {
     if (!ready) return false;
-    if (canInstall && !canInstall()) { broadcast('toast', 'Дождитесь ответа агента: при перезапуске он остановится.'); return false; }
+    if (canInstall && !canInstall()) { broadcast('toast', L('update.waitForAgent')); return false; }
     if (runInstaller(true)) app.quit();
     return true;
   }

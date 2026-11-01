@@ -11,7 +11,8 @@ const codexProvider = require('./src/main/providers/codex');
 const openaiProvider = require('./src/main/providers/openai');
 const { createImages } = require('./src/main/images');
 const { createGptImages } = require('./src/main/gpt-images');
-const { createI18n } = require('./src/main/i18n');
+const i18n = require('./src/main/i18n');
+const { L } = i18n;
 const { createPlugins } = require('./src/main/plugins');
 const { createMemory } = require('./src/main/memory');
 const { createUpdater } = require('./src/main/updater');
@@ -22,7 +23,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 let win = null;
 let tray = null;
 let quitting = false;
-let tr = (s) => s, plugins, memory, store, runner, scheduler, terms, images, gptImages, updater;
+let plugins, memory, store, runner, scheduler, terms, images, gptImages, updater;
 const startHidden = process.argv.includes('--hidden');
 const ICON = path.join(__dirname, 'src', 'assets', 'icon.png');
 const ICON_ICO = path.join(__dirname, 'src', 'assets', 'icon.ico');
@@ -43,7 +44,7 @@ function notify({ title, body, chatId, onlyIfHidden }) {
   const s = store.getSettings();
   if (!s.notifications || !Notification.isSupported()) return;
   if (onlyIfHidden && win && win.isVisible() && win.isFocused()) return;
-  const n = new Notification({ title: tr(title), body: tr(body || ''), icon: ICON, silent: false });
+  const n = new Notification({ title, body: body || '', icon: ICON, silent: false });
   n.on('click', () => showWindow(chatId));
   n.show();
 }
@@ -133,22 +134,27 @@ function createWindow() {
       win.hide();
       if (!store.getSettings().trayHintShown) {
         store.saveSettings({ trayHintShown: true });
-        notify({ title: 'Stella работает в фоне', body: 'Окно свёрнуто в трей. Выйти можно через значок в трее.' });
+        notify({ title: L('tray.backgroundTitle'), body: L('tray.backgroundBody') });
       }
     }
   });
+}
+
+function buildTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: L('tray.open'), click: () => showWindow() },
+    { label: L('chat.new'), click: () => { showWindow(); broadcast('chat:new'); } },
+    { type: 'separator' },
+    { label: L('tray.quit'), click: () => { quitting = true; app.quit(); } }
+  ]));
 }
 
 function createTray() {
   const img = nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 });
   tray = new Tray(img);
   tray.setToolTip('Stella');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: tr('Открыть Stella'), click: () => showWindow() },
-    { label: tr('Новый чат'), click: () => { showWindow(); broadcast('chat:new'); } },
-    { type: 'separator' },
-    { label: tr('Выход'), click: () => { quitting = true; app.quit(); } }
-  ]));
+  buildTrayMenu();
   tray.on('click', () => showWindow());
 }
 
@@ -172,20 +178,21 @@ function wireIpc() {
     let hotkeyOk = true;
     if (safe.hotkey !== undefined && safe.hotkey !== before.hotkey) hotkeyOk = registerHotkey(safe.hotkey);
     if (safe.autostart !== undefined) applyAutostart(safe.autostart);
+    if (safe.language !== undefined && safe.language !== before.language) buildTrayMenu();
     return { settings: publicSettings(), hotkeyOk };
   });
   ipcMain.handle('apikey:set', (_e, key) => {
     key = String(key || '').trim();
     if (!key) { store.saveSettings({ apiKeyEnc: '' }); return publicSettings(); }
     const enc = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(key).toString('base64') : '';
-    if (!enc) throw new Error('Шифрование недоступно в этой системе');
+    if (!enc) throw new Error(L('error.encryptionUnavailable'));
     store.saveSettings({ apiKeyEnc: enc });
     return publicSettings();
   });
   ipcMain.handle('cf:setToken', (_e, token) => {
     token = String(token || '').trim();
     if (!token) { store.saveSettings({ cfTokenEnc: '' }); return publicSettings(); }
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('Шифрование недоступно в этой системе');
+    if (!safeStorage.isEncryptionAvailable()) throw new Error(L('error.encryptionUnavailable'));
     store.saveSettings({ cfTokenEnc: safeStorage.encryptString(token).toString('base64') });
     return publicSettings();
   });
@@ -209,7 +216,7 @@ function wireIpc() {
   ipcMain.handle('gpt-images:save', async (_e, id) => {
     try {
       const item = gptImages.get(id), ext = path.extname(item.file);
-      const r = await dialog.showSaveDialog(win, { title: 'Сохранить изображение', defaultPath: path.join(app.getPath('pictures'), 'Stella-' + item.id.slice(0, 8) + ext), filters: [{ name: 'Image', extensions: [ext.slice(1)] }] });
+      const r = await dialog.showSaveDialog(win, { title: L('gptImages.saveDialogTitle'), defaultPath: path.join(app.getPath('pictures'), 'Stella-' + item.id.slice(0, 8) + ext), filters: [{ name: 'Image', extensions: [ext.slice(1)] }] });
       if (r.canceled || !r.filePath) return { ok: false, canceled: true };
       if (path.resolve(item.file) !== path.resolve(r.filePath)) fs.copyFileSync(item.file, r.filePath);
       return { ok: true };
@@ -220,7 +227,7 @@ function wireIpc() {
   ipcMain.handle('codex:account', async () => codexProvider.getAccount(store.getSettings()));
 
   ipcMain.handle('project:pick', async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: tr('Папка проекта') });
+    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: L('dialog.projectFolder') });
     if (r.canceled || !r.filePaths[0]) return null;
     const p = r.filePaths[0];
     const s = store.getSettings();
@@ -265,18 +272,18 @@ function wireIpc() {
   ipcMain.handle('chat:answerInput', (_e, id, reqId, answers) => runner.answerInput(id, reqId, answers));
 
   ipcMain.handle('files:pick', async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], title: tr('Прикрепить файлы') });
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], title: L('dialog.attachFiles') });
     return r.canceled ? [] : r.filePaths.map((p) => ({ name: path.basename(p), path: p }));
   });
   ipcMain.handle('file:read', (_e, p) => {
     try {
       const st = fs.statSync(p);
-      if (!st.isFile()) return { ok: false, error: 'Это не файл' };
+      if (!st.isFile()) return { ok: false, error: L('error.notAFile') };
       const ext = path.extname(p).toLowerCase();
       const isText = !['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.exe', '.dll', '.bin', '.mp4', '.mp3', '.wav'].includes(ext);
       if (isText && st.size <= 600000) return { ok: true, size: st.size, ext, text: fs.readFileSync(p, 'utf8') };
       return { ok: true, size: st.size, ext, text: null };
-    } catch (e) { return { ok: false, error: 'Файл не найден или недоступен' }; }
+    } catch (e) { return { ok: false, error: L('error.fileNotFound') }; }
   });
   ipcMain.handle('file:open', (_e, p) => shell.openPath(p));
   ipcMain.handle('file:reveal', (_e, p) => { shell.showItemInFolder(p); return true; });
@@ -298,7 +305,7 @@ app.on('second-instance', () => showWindow());
 
 app.whenReady().then(() => {
   store = createStore(app.getPath('userData'));
-  tr = createI18n({ getSettings: () => store.getSettings(), systemLocale: app.getLocale() }).tr;
+  i18n.configure({ getSettings: () => store.getSettings(), systemLocale: app.getLocale() });
   plugins = createPlugins({ store });
   memory = createMemory(app.getPath('userData'));
   runner = createRunner({ store, broadcast, notify, getApiKey, memory });
@@ -310,7 +317,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   const s = store.getSettings();
-  if (!registerHotkey(s.hotkey)) broadcast('toast', 'Не удалось назначить горячую клавишу ' + s.hotkey);
+  if (!registerHotkey(s.hotkey)) broadcast('toast', L('error.hotkeyFailed', { hotkey: s.hotkey }));
   applyAutostart(s.autostart);
   scheduler.start();
   updater = createUpdater({ app, dialog, getWindow: () => win, broadcast, canInstall: () => !gptImages.status().active && !Object.values(runner.states()).some((s) => s && !['idle', 'error'].includes(s)), beforeInstall: () => { quitting = true; } });
