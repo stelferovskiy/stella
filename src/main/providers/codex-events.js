@@ -36,7 +36,9 @@ function createEventAdapter({ emit = () => {}, emitLive = () => {}, cwd = proces
     const text = error?.message || String(error || 'Codex turn failed.');
     if (errors.has(text)) return;
     errors.add(text);
-    emit({ t: 'error', text, action: /401|unauthori|not logged|log in|missing bearer/i.test(text) ? 'login-codex' : null });
+    const info = error && error.codexErrorInfo;
+    const limit = info === 'usageLimitExceeded' || !!(info && typeof info === 'object' && 'usageLimitExceeded' in info);
+    emit({ t: 'error', text, ...(limit ? { limit: true } : {}), action: /401|unauthori|not logged|log in|missing bearer/i.test(text) ? 'login-codex' : null });
   }
   const inside = (base, target) => { const rel = path.relative(base, target); return !path.isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + path.sep); };
   function safePath(value) {

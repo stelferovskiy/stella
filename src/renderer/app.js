@@ -762,12 +762,8 @@
   function runAction(action) {
     if (action === 'settings') return openSettings();
     if (action === 'studio') return openStudio();
-    if (action === 'login-claude') {
-      if (!S.env.claudeExe) return runAction('install-claude');
-      openTerminal('& ' + psQuote(S.env.claudeExe), L('term.claudeLogin'));
-      toast(L('action.loginClaudeHint'), 7000);
-    }
-    if (action === 'login-codex') { openTerminal('codex.cmd login', L('term.codexLogin')); toast(L('action.loginCodexHint'), 6000); }
+    if (action === 'login-claude') return loginAccount('claude', activeSlot('claude'));
+    if (action === 'login-codex') return loginAccount('codex', activeSlot('codex'));
     const done = '; Write-Host; Write-Host ' + psQuote(L('term.installDone'));
     if (action === 'install-claude') { openTerminal('npm.cmd install -g @anthropic-ai/claude-code' + done, L('term.installClaude')); waitEnv(); }
     if (action === 'install-sdk') { openTerminal('npm.cmd install -g @anthropic-ai/claude-agent-sdk --omit=optional' + done, L('term.installSdk')); waitEnv(); }
@@ -1418,6 +1414,90 @@
 
   function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return I18N.apply(t.content.firstChild); }
 
+  /* ---------- аккаунты (до двух на провайдера) ---------- */
+  const ACC_LABEL = { claude: 'Claude', codex: 'Codex · ChatGPT' };
+  function activeSlot(p) { const a = S.settings.accounts && S.settings.accounts[p]; return a && a.active === 2 ? 2 : 1; }
+  async function loginAccount(p, slot) {
+    if (p === 'claude' && !S.env.claudeExe) return runAction('install-claude');
+    const envName = p === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME';
+    const pre = slot === 2 ? '$env:' + envName + '=' + psQuote(await api.accountsPrepare(p)) + '; ' : '';
+    const title = (p === 'claude' ? L('term.claudeLogin') : L('term.codexLogin')) + ' · ' + L('accounts.slot', { n: slot });
+    if (p === 'claude') { openTerminal(pre + '& ' + psQuote(S.env.claudeExe), title); toast(L('action.loginClaudeHint'), 7000); }
+    else { openTerminal(pre + 'codex.cmd login', title); toast(L('action.loginCodexHint'), 6000); }
+  }
+  // Modal confirmation. With "check", OK stays disabled until the box is ticked.
+  function confirmDialog({ title, text, warning, check, ok, cancel }) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'modal alert-modal';
+      wrap.setAttribute('role', 'alertdialog'); wrap.setAttribute('aria-modal', 'true');
+      wrap.innerHTML = '<div class="modal-box alert-box is-error"><div class="alert-bar"></div><div class="alert-body"><div class="alert-title"></div><div class="alert-text"></div><div class="alert-warn" role="note"></div><label class="check alert-check"><input type="checkbox"> <span></span></label></div><div class="alert-actions"><button type="button" class="btn" data-a="no"></button><button type="button" class="btn accent" data-a="yes"></button></div></div>';
+      wrap.querySelector('.alert-title').textContent = title || '';
+      wrap.querySelector('.alert-text').textContent = text || '';
+      if (!text) wrap.querySelector('.alert-text').remove();
+      wrap.querySelector('.alert-warn').textContent = warning || '';
+      if (!warning) wrap.querySelector('.alert-warn').remove();
+      const yes = wrap.querySelector('[data-a=yes]'), no = wrap.querySelector('[data-a=no]');
+      yes.textContent = ok || 'OK'; no.textContent = cancel || L('common.cancel');
+      const box = wrap.querySelector('.alert-check');
+      if (check) { box.querySelector('span').textContent = check; yes.disabled = true; box.querySelector('input').addEventListener('change', (e) => { yes.disabled = !e.target.checked; }); }
+      else box.remove();
+      const close = (v) => { wrap.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape') close(false); };
+      yes.addEventListener('click', () => close(true));
+      no.addEventListener('click', () => close(false));
+      document.addEventListener('keydown', onKey);
+      document.body.append(wrap);
+      (check ? box.querySelector('input') : no).focus();
+    });
+  }
+  async function ackAccounts(p) {
+    if (S.settings.accounts && S.settings.accounts[p] && S.settings.accounts[p].ack) return true;
+    const ok = await confirmDialog({ title: L('accounts.ackTitle'), text: L('accounts.ackText'), warning: L('accounts.warning'), check: L('accounts.ackCheck'), ok: L('accounts.ackOk') });
+    if (ok) S.settings = await api.accountsAck(p);
+    return ok;
+  }
+  async function renderAccounts(box) {
+    box.textContent = '';
+    const note = document.createElement('div'); note.className = 'hint'; note.textContent = L('accounts.loading'); box.append(note);
+    let st;
+    try { st = await api.accountsState(); } catch (e) { note.textContent = String(e.message || e); return; }
+    box.textContent = '';
+    for (const p of ['claude', 'codex']) {
+      const ps = st[p];
+      const grp = el('<div class="acc-group"><div class="acc-name"></div></div>');
+      grp.querySelector('.acc-name').textContent = ACC_LABEL[p];
+      for (const sl of ps.slots) {
+        const row = el('<div class="acc-row"><div class="acc-info"><div class="acc-title"></div><div class="hint acc-sub"></div></div><div class="row acc-actions"></div></div>');
+        const isActive = ps.active === sl.slot;
+        row.classList.toggle('is-active', isActive);
+        row.querySelector('.acc-title').textContent = L('accounts.slot', { n: sl.slot }) + (isActive ? ' · ' + L('accounts.active') : '');
+        row.querySelector('.acc-sub').textContent = !sl.signedIn ? L('accounts.notSignedIn') : [sl.email, sl.plan ? sl.plan.toUpperCase() : '', sl.paid ? L('accounts.paid') : L('accounts.free')].filter(Boolean).join(' · ');
+        const acts = row.querySelector('.acc-actions');
+        const btn = (label, fn, cls) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.addEventListener('click', fn); acts.append(b); };
+        btn(sl.signedIn ? L('accounts.relogin') : L('accounts.signIn'), async () => { if (sl.slot === 2 && !(await ackAccounts(p))) return; loginAccount(p, sl.slot); });
+        if (!isActive && sl.signedIn) btn(L('accounts.makeActive'), async () => { if (sl.slot === 2 && !(await ackAccounts(p))) return; S.settings = await api.accountsSetActive(p, sl.slot); renderAccounts(box); refreshCodex(); });
+        if (sl.slot === 2 && sl.signedIn) btn(L('common.delete'), async () => { if (!(await confirmDialog({ title: L('accounts.removeTitle'), text: L('accounts.removeText'), ok: L('common.delete') }))) return; S.settings = await api.accountsRemove(p); renderAccounts(box); refreshCodex(); }, 'danger');
+        grp.append(row);
+      }
+      box.append(grp);
+    }
+    const warn = document.createElement('div'); warn.className = 'alert-warn'; warn.textContent = L('accounts.warning'); box.append(warn);
+    const refresh = document.createElement('button'); refresh.type = 'button'; refresh.className = 'btn'; refresh.textContent = L('accounts.refresh');
+    refresh.addEventListener('click', () => renderAccounts(box)); box.append(refresh);
+  }
+  // A run hit the usage limit and the other account has a paid plan too: ask before switching.
+  api.onAccountLimit(async ({ chatId, provider, from, to, fromEmail, toEmail }) => {
+    const who = (n, email) => L('accounts.slot', { n }) + (email ? ' (' + email + ')' : '');
+    const ok = await confirmDialog({ title: L('accounts.limitTitle'), text: L('accounts.limitText', { provider: ACC_LABEL[provider], from: who(from, fromEmail), to: who(to, toEmail) }), warning: L('accounts.warning'), ok: L('accounts.switchOk') });
+    if (!ok) return;
+    const r = await api.accountsSwitchContinue(chatId, provider, to);
+    if (r) { S.settings = r; refreshCodex(); toast(L('accounts.switched', { n: to })); }
+  });
+  api.onAccountsChanged(async (cfg) => {
+    try { const s = await api.init(); S.settings = s.settings; } catch (e) {}
+  });
+
   function openSettings() {
     const s = S.settings;
     const body = $('settingsBody');
@@ -1456,6 +1536,11 @@
         toast(L('settings.gpt.modelsFound', { n: list.length }));
       } catch (e) { toast(L('settings.gpt.modelsFailed')); }
     });
+
+    // аккаунты
+    const accS = el('<div class="sect"><h3 data-i18n="accounts.title"></h3><div class="hint" data-i18n="accounts.hint"></div><div class="acc-list"></div></div>');
+    body.append(accS);
+    renderAccounts(accS.querySelector('.acc-list'));
 
     // Cloudflare
     const cfS = el('<div class="sect"><h3 data-i18n="settings.cf.title"></h3><div class="grid2">' +

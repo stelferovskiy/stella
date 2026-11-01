@@ -6,6 +6,7 @@ const { createRequire } = require('module');
 const { spawn } = require('child_process');
 const { CodexClient } = require('./codex-client');
 const { L } = require('../i18n');
+const accounts = require('../accounts');
 function isFile(p) { try { return fs.statSync(p).isFile(); } catch (_) { return false; } }
 function findCodexJs(settings) {
   const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
@@ -15,10 +16,11 @@ function findCodexJs(settings) {
   }
   return null;
 }
-function launchSpec(settings) {
+// slot: account slot to launch with (default: the active one).
+function launchSpec(settings, slot) {
   const entry = findCodexJs(settings);
   if (!entry) throw Object.assign(new Error(L('codex.missing')), { action: 'install-codex' });
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1' };
+  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1', ...accounts.envFor(settings, 'codex', slot) };
   const args = ['app-server', '--listen', 'stdio://'];
   if (!/\.[cm]?js$/i.test(entry)) return { command: entry, args, env };
   // Prefer the native executable to avoid the npm wrapper's Windows signal lifecycle.
@@ -81,20 +83,22 @@ async function handleServerRequest(message, { requestApproval, requestUserInput,
     default: throw new Error(L('codex.unsupportedRequest', { method: message.method }));
   }
 }
-async function withClient(settings, action) {
-  const c = new CodexClient(launchSpec(settings));
+async function withClient(settings, action, slot) {
+  const c = new CodexClient(launchSpec(settings, slot));
   c.on('request', (m) => { try { c.reject(m.id, -32601, 'Interactive request requires an active Stella chat'); } catch (_) {} });
   try { await c.start(); return await action(c); } finally { await c.close(); }
 }
 async function listModels(settings) {
   return withClient(settings, async (c) => { const models = []; let cursor; do { const r = await c.request('model/list', { limit: 100, ...(cursor ? { cursor } : {}) }); models.push(...(r.data || [])); cursor = r.nextCursor; } while (cursor); return models; });
 }
-async function getAccount(settings) {
-  return withClient(settings, async (c) => { const account = await c.request('account/read', { refreshToken: false }); try { return { ...account, ...await c.request('account/rateLimits/read', {}) }; } catch (_) { return { ...account, rateLimits: null }; } });
+async function getAccount(settings, slot) {
+  return withClient(settings, async (c) => { const account = await c.request('account/read', { refreshToken: false }); try { return { ...account, ...await c.request('account/rateLimits/read', {}) }; } catch (_) { return { ...account, rateLimits: null }; } }, slot);
 }
 const CHAT_INSTRUCTIONS = 'You are the conversational assistant inside Stella. Answer in the user’s language. Help with questions, writing and projects. Use tools when needed for the user’s request, and respect their chosen approval policy.';
-async function run({ chat, text, attachments = [], settings, emit, emitLive = () => {}, onThread, onLimit, abortController, mode, flavor, requestApproval, requestUserInput, onRequestResolved }) {
+async function run({ chat, text, attachments = [], settings, emit: emitRaw, emitLive = () => {}, onThread, onLimit, abortController, mode, flavor, requestApproval, requestUserInput, onRequestResolved, resumeFallback }) {
   const signal = abortController.signal; if (signal.aborted) return { status: 'stopped' };
+  let limitHit = false;
+  const emit = (ev) => { if (ev && ev.t === 'error' && (ev.limit || accounts.isLimitText(ev.text))) limitHit = true; emitRaw(ev); };
   let client, threadId = chat.codexThread || null, turnId, stopTimer; let settled = false, resolveDone;
   const startupEvents = [];
   const done = new Promise((resolve) => { resolveDone = resolve; });
@@ -132,23 +136,29 @@ async function run({ chat, text, attachments = [], settings, emit, emitLive = ()
     signal.addEventListener('abort', abort, { once: true });
     await client.start(); if (signal.aborted) return { status: 'stopped' };
     const params = { cwd: chat.cwd, sandbox, approvalPolicy: policy.approvalPolicy, approvalsReviewer: 'user', ...(cfg.model ? { model: cfg.model } : {}), ...(isChat ? { developerInstructions: CHAT_INSTRUCTIONS } : {}) };
-    const r = chat.codexThread ? await client.request('thread/resume', { ...params, threadId: chat.codexThread }) : await client.request('thread/start', params);
+    // A thread moved from the other account may not resume there; then start fresh with a dialog digest.
+    let r, fallbackContext = '';
+    if (chat.codexThread) {
+      try { r = await client.request('thread/resume', { ...params, threadId: chat.codexThread }); }
+      catch (err) { if (!resumeFallback || signal.aborted) throw err; fallbackContext = resumeFallback() || ''; r = await client.request('thread/start', params); }
+    } else r = await client.request('thread/start', params);
     threadId = r.thread.id; if (onThread) onThread(threadId);
     for (const [kind, message] of startupEvents.splice(0)) {
       if (kind === 'request') handleRequest(message); else handleNotification(message);
     }
     if (signal.aborted) return { status: 'stopped' };
-    let prompt = text || ''; const files = attachments.filter((a) => a.kind !== 'image');
+    let prompt = fallbackContext + (text || ''); const files = attachments.filter((a) => a.kind !== 'image');
     if (files.length) prompt += '\n\nAttached files (read them when relevant):\n' + files.map((a) => '- ' + a.path).join('\n');
     const input = [{ type: 'text', text: prompt.trim() ? prompt : L('prompt.seeAttachments'), text_elements: [] }, ...attachments.filter((a) => a.kind === 'image').map((a) => ({ type: 'localImage', path: a.path }))];
     emit({ t: 'state', s: 'thinking' });
     const turn = await client.request('turn/start', { threadId, input, cwd: chat.cwd, ...policy, approvalsReviewer: 'user', ...(cfg.model ? { model: cfg.model } : {}), ...(cfg.effort ? { effort: cfg.effort } : {}) }, 60000);
     turnId = turn.turn.id; if (signal.aborted) abort();
-    return await done;
+    const result = await done;
+    return result && result.status === 'error' && limitHit ? { ...result, limitHit } : result;
   } catch (err) {
     if (signal.aborted) return { status: 'stopped' };
     const login = /401|unauthori[sz]ed|not logged|authentication required|missing bearer/i.test(err.message);
-    emit({ t: 'error', text: err.message, action: err.action || (login ? 'login-codex' : null) }); return { status: 'error' };
+    emit({ t: 'error', text: err.message, action: err.action || (login ? 'login-codex' : null) }); return { status: 'error', limitHit };
   } finally { settled = true; signal.removeEventListener('abort', abort); clearTimeout(stopTimer); if (client) await client.close(); }
 }
 module.exports = { run, findCodexJs, launchSpec, killTree, policyFor, handleServerRequest, listModels, getAccount };

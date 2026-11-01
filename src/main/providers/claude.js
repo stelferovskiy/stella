@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const { pathToFileURL } = require('url');
 const { L } = require('../i18n');
+const accounts = require('../accounts');
 
 // Claude Agent SDK распространяется Anthropic под собственной (не открытой) лицензией,
 // поэтому Stella его не включает в сборку, а берёт из глобальной установки npm у пользователя.
@@ -162,6 +163,8 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
       return res;
     }
   };
+  const accEnv = accounts.envFor(settings, 'claude');
+  if (accEnv.CLAUDE_CONFIG_DIR) options.env = Object.assign({}, process.env, accEnv);
   if (chat.claudeSession) options.resume = chat.claudeSession;
   if (settings.claude.model) options.model = settings.claude.model;
   if (['low', 'medium', 'high', 'xhigh', 'max'].includes(settings.claude.effort)) options.effort = settings.claude.effort;
@@ -172,6 +175,7 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
   let usage = null;
   let gotText = false;
   let errored = false;
+  let limitHit = false;
   const liveBlocks = new Map(); // индекс блока -> { id, name, json, last }
   function pushLive(b, final) {
     const now = Date.now();
@@ -243,6 +247,7 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
         }
         emit({ t: 'state', s: 'thinking' });
       } else if (m.type === 'rate_limit_event' && m.rate_limit_info) {
+        if (m.rate_limit_info.status === 'rejected') limitHit = true;
         onLimit(m.rate_limit_info);
       } else if (m.type === 'result') {
         let input = 0, output = 0;
@@ -255,6 +260,7 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
         if (m.subtype !== 'success' || m.is_error) {
           const errText = (m.errors && m.errors.length ? m.errors.join('\n') : '') || m.result || L('claude.failed');
           const needLogin = /login|log in|api key|auth|credential|unauthori/i.test(errText);
+          if (accounts.isLimitText(errText)) limitHit = true;
           emit({ t: 'error', text: needLogin ? L('claude.needLogin') + '\n\n' + errText : errText, action: needLogin ? 'login-claude' : null });
           status = 'error';
           errored = true;
@@ -265,14 +271,15 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
   } catch (err) {
     finishInput();
     if (abortController.signal.aborted) return { status: 'stopped', usage };
-    if (errored) return { status: 'error', usage };
+    if (errored) return { status: 'error', usage, limitHit };
     const t = String(err && err.message || err);
+    if (accounts.isLimitText(t)) limitHit = true;
     const needLogin = /login|log in|api key|auth|credential|unauthori/i.test(t);
     emit({ t: 'error', text: L('claude.requestFailed', { message: t }), action: needLogin ? 'login-claude' : null });
-    return { status: 'error', usage };
+    return { status: 'error', usage, limitHit };
   }
   finishInput();
-  return { status: abortController.signal.aborted ? 'stopped' : status, usage };
+  return { status: abortController.signal.aborted ? 'stopped' : status, usage, limitHit: limitHit && status === 'error' };
 }
 
 module.exports = { run, findClaudeExe, findSdk, describeTool, partialField };

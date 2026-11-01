@@ -7,10 +7,11 @@ const { L } = require('./i18n');
 const claude = require('./providers/claude');
 const codex = require('./providers/codex');
 const openai = require('./providers/openai');
+const accounts = require('./accounts');
 
 const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 
-function createRunner({ store, broadcast, notify, getApiKey, memory }) {
+function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLimit }) {
   const active = new Map(); // chatId -> { abort, approvals: Map, msgId, state }
 
   function makeTitle(text) {
@@ -43,11 +44,31 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
     broadcast('agent:state', { chatId, state: s });
   }
 
+  // The chat's session/thread was created under another account: copy its transcript to the active one.
+  // If that fails, start fresh and hand the model a local digest of the dialog instead.
+  function migrateAccount(chat, settings) {
+    const provider = accounts.providerFor(chat.agent, settings);
+    if (!provider) return { provider: null, context: '' };
+    const slot = accounts.activeSlot(settings, provider);
+    try { accounts.syncShared(provider, slot); } catch (e) {}
+    const key = provider === 'claude' ? 'claudeSession' : 'codexThread', slotKey = provider + 'Slot';
+    const from = chat[slotKey] || 1;
+    let context = '', resumeFallback = null;
+    const digest = () => (memory && chat.messages.length ? memory.forHandoff(memory.digest(chat)) : '');
+    if (chat[key] && from !== slot) {
+      if (!accounts.copySession(provider, chat[key], from, slot)) { chat[key] = null; context = digest(); }
+      else { const d = digest(); resumeFallback = () => d; }
+    }
+    chat[slotKey] = slot;
+    return { provider, slot, context, resumeFallback };
+  }
+
   async function send(chatId, { text, attachments, mode }) {
     if (active.has(chatId)) throw new Error(L('error.agentBusy'));
     const chat = store.getChat(chatId);
     if (!chat) throw new Error(L('error.chatNotFound'));
     const settings = store.getSettings();
+    const account = migrateAccount(chat, settings);
 
     const atts = prepareAttachments(chatId, attachments);
     const userMsg = { id: crypto.randomUUID(), role: 'user', text: text || '', attachments: atts, time: Date.now() };
@@ -61,6 +82,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
       const ctx = chat.handoff ? memory.forHandoff(chat.handoff) : memory.forNewChat(chat.cwd);
       if (ctx) promptText = ctx + (text || '');
     }
+    if (account.context) promptText = account.context + (promptText || '');
     broadcast('chats:changed', store.saveChat(chat));
     broadcast('chat:message', { chatId, message: userMsg });
     broadcast('chat:message', { chatId, message: msg });
@@ -144,12 +166,12 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
           onLimit: (info) => { store.setLimit('claude', info.rateLimitType || 'unknown', info); broadcast('usage:changed', store.getUsage()); }
         });
       } else if (chat.agent === 'codex') {
-        result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, abortController, mode, flavor: 'codex', onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+        result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, abortController, mode, flavor: 'codex', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
       } else if (chat.agent === 'chatgpt') {
         if (settings.chatgpt.backend === 'api') {
           result = await openai.run({ chat, text: promptText, attachments: atts, settings, apiKey: getApiKey(), emit, abortController, historyIndex });
         } else {
-          result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, abortController, mode: mode || settings.chatgpt.sandbox || 'workspace-write', flavor: 'chatgpt', onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+          result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, abortController, mode: mode || settings.chatgpt.sandbox || 'workspace-write', flavor: 'chatgpt', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
         }
       }
     } catch (err) {
@@ -176,6 +198,9 @@ function createRunner({ store, broadcast, notify, getApiKey, memory }) {
     if (result.usage) { store.addUsage(chat.agent, result.usage); broadcast('usage:changed', store.getUsage()); }
     active.delete(chatId);
     setState(chatId, status === 'error' ? 'error' : 'idle');
+    if (status === 'error' && result.limitHit && account.provider && onAccountLimit) {
+      Promise.resolve().then(() => onAccountLimit({ chatId, provider: account.provider, from: account.slot })).catch(() => {});
+    }
     broadcast('chats:changed', store.saveChat(chat));
 
     if (status === 'done') {

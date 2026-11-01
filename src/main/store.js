@@ -154,6 +154,11 @@ function createStore(baseDir) {
     usage.limits[agent][type] = Object.assign({}, info, { at: Date.now() });
     writeJson(usageFile, usage);
   }
+  function clearLimits(agent) {
+    if (!usage.limits[agent]) return;
+    delete usage.limits[agent];
+    writeJson(usageFile, usage);
+  }
   function getUsage() {
     return { week: usage.weeks[weekKey(new Date())] || {}, limits: usage.limits || {} };
   }
@@ -162,7 +167,7 @@ function createStore(baseDir) {
     dir, getSettings, saveSettings,
     listChats, getChat, saveChat, createChat, deleteChat,
     getTasks, saveTasks,
-    addUsage, setLimit, getUsage
+    addUsage, setLimit, clearLimits, getUsage
   };
 }
 

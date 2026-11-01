@@ -17,6 +17,7 @@ const { createPlugins } = require('./src/main/plugins');
 const { createMemory } = require('./src/main/memory');
 const { createUpdater } = require('./src/main/updater');
 const stellaDns = require('./src/main/dns');
+const accounts = require('./src/main/accounts');
 
 app.setAppUserModelId('com.stella.desktop');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
@@ -237,6 +238,7 @@ function wireIpc() {
     env: envInfo()
   }));
   ipcMain.handle('env:check', () => envInfo());
+  wireAccountsIpc();
   ipcMain.handle('dns:status', () => dnsStatus());
   ipcMain.handle('dns:validate', (_e, entry) => {
     try { return { ok: true, entry: stellaDns.normalizeEntry(entry) }; } catch (e) { return { ok: false, field: e.message }; }
@@ -390,7 +392,8 @@ app.whenReady().then(async () => {
   i18n.configure({ getSettings: () => store.getSettings(), systemLocale: app.getLocale() });
   plugins = createPlugins({ store });
   memory = createMemory(app.getPath('userData'));
-  runner = createRunner({ store, broadcast, notify, getApiKey, memory });
+  accounts.configure({ baseDir: store.dir });
+  runner = createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLimit });
   scheduler = createScheduler({ store, runner, broadcast, notify });
   terms = createTerminals({ broadcast });
   images = createImages({ store, getCreds: getCfCreds });
@@ -413,11 +416,66 @@ app.whenReady().then(async () => {
   limitsTimer = setInterval(pollClaudeLimits, 60 * 1000);
 });
 
+/* ---------- accounts (up to two per provider) ---------- */
+function accountInfo(provider, slot) {
+  const s = store.getSettings();
+  return accounts.info(provider, slot, (n) => codexProvider.getAccount(s, n));
+}
+async function accountsState() {
+  const s = store.getSettings(), out = {};
+  for (const p of accounts.PROVIDERS) {
+    const c = accounts.cfg(s, p);
+    try { accounts.syncShared(p, c.active); } catch (e) {}
+    const slots = await Promise.all([1, 2].map(async (n) => Object.assign(await accountInfo(p, n), { dir: accounts.slotDir(p, n) })));
+    out[p] = { active: c.active, ack: c.ack, slots };
+  }
+  return out;
+}
+function saveAccountCfg(provider, patch) {
+  const all = Object.assign({}, store.getSettings().accounts || {});
+  all[provider] = Object.assign({}, accounts.cfg(store.getSettings(), provider), patch);
+  store.saveSettings({ accounts: all });
+}
+function setActiveAccount(provider, slot) {
+  // Carry plugin/MCP/settings changes made under the account being left.
+  try { accounts.syncShared(provider, accounts.activeSlot(store.getSettings(), provider)); } catch (e) {}
+  saveAccountCfg(provider, { active: slot === 2 ? 2 : 1 });
+  // Limits shown in the panel belonged to the previous account.
+  for (const agent of provider === 'claude' ? ['claude'] : ['codex', 'chatgpt']) store.clearLimits(agent);
+  broadcast('usage:changed', store.getUsage());
+  if (provider === 'claude') pollClaudeLimits();
+  broadcast('accounts:changed', accounts.cfg(store.getSettings(), provider));
+}
+// A run hit the usage limit: offer the other account, only when both have a paid plan.
+async function onAccountLimit({ chatId, provider, from }) {
+  const c = accounts.cfg(store.getSettings(), provider);
+  if (!c.ack) return;
+  const to = from === 2 ? 1 : 2;
+  const [a, b] = await Promise.all([accountInfo(provider, from), accountInfo(provider, to)]);
+  if (!b.signedIn) return;
+  if (!a.paid || !b.paid) { broadcast('toast', L('accounts.notPaid')); return; }
+  broadcast('account:limit', { chatId, provider, from, to, fromEmail: a.email, toEmail: b.email });
+  notify({ title: L('accounts.limitTitle'), body: L('accounts.limitNotify'), chatId, onlyIfHidden: true });
+}
+function wireAccountsIpc() {
+  const okProvider = (p) => accounts.PROVIDERS.includes(p);
+  ipcMain.handle('accounts:state', () => accountsState());
+  ipcMain.handle('accounts:ack', (_e, p) => { if (okProvider(p)) saveAccountCfg(p, { ack: true }); return publicSettings(); });
+  ipcMain.handle('accounts:prepare', (_e, p) => { if (!okProvider(p)) return null; accounts.envFor(store.getSettings(), p, 2); try { accounts.syncShared(p, 1); } catch (e) {} return accounts.slotDir(p, 2); });
+  ipcMain.handle('accounts:setActive', (_e, p, slot) => { if (okProvider(p)) setActiveAccount(p, slot); return publicSettings(); });
+  ipcMain.handle('accounts:remove', (_e, p) => { if (!okProvider(p)) return publicSettings(); setActiveAccount(p, 1); accounts.removeSecond(p); return publicSettings(); });
+  ipcMain.handle('accounts:switchContinue', (_e, chatId, p, to) => {
+    if (!okProvider(p) || runner.isRunning(chatId)) return false;
+    setActiveAccount(p, to);
+    runner.send(chatId, { text: L('accounts.continuePrompt') }).catch((err) => broadcast('toast', String(err.message || err)));
+    return publicSettings();
+  });
+}
+
 let limitsTimer = null;
 async function pollClaudeLimits() {
   try {
-    const credPath = path.join(require('os').homedir(), '.claude', '.credentials.json');
-    const token = JSON.parse(fs.readFileSync(credPath, 'utf8')).claudeAiOauth?.accessToken;
+    const token = accounts.claudeToken(store.getSettings());
     if (!token) return;
     const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
       headers: { Authorization: 'Bearer ' + token, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'stella' }

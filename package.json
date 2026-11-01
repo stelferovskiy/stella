@@ -1,7 +1,7 @@
 {
   "name": "stella",
   "productName": "Stella",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "Stella — a futuristic desktop command center for Claude, Codex and ChatGPT",
   "main": "main.js",
   "author": "stelferovskiy",
