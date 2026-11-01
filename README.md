@@ -53,7 +53,7 @@ Official installers are built by the public [GitHub Actions workflow](.github/wo
 
 ## Code signing
 
-See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). Free code signing has been requested from SignPath.io with a certificate by SignPath Foundation; until it is approved, releases are unsigned.
+See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). Free code signing is being requested from SignPath.io with a certificate by SignPath Foundation; until it is approved, releases are unsigned.
 
 ---
 

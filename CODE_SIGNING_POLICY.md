@@ -1,6 +1,6 @@
 # Code signing policy
 
-Free code signing for Windows releases is requested from [SignPath.io](https://signpath.io), with a certificate by the [SignPath Foundation](https://signpath.org). **Status: application submitted, not yet approved.** Until approval, release binaries are unsigned.
+Free code signing for Windows releases is requested from [SignPath.io](https://signpath.io), with a certificate by the [SignPath Foundation](https://signpath.org). **Status: application to SignPath Foundation in progress, not yet approved.** Until approval, release binaries are unsigned.
 
 ## Team roles
 
