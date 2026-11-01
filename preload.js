@@ -31,6 +31,15 @@ contextBridge.exposeInMainWorld('stella', {
   readFile: (p) => ipcRenderer.invoke('file:read', p),
   openFile: (p) => ipcRenderer.invoke('file:open', p),
   revealFile: (p) => ipcRenderer.invoke('file:reveal', p),
+  transferChat: (id) => ipcRenderer.invoke('chat:transfer', id),
+  memoryGet: (cwd) => ipcRenderer.invoke('memory:get', cwd),
+  memorySet: (cwd, text) => ipcRenderer.invoke('memory:set', cwd, text),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  updateState: () => ipcRenderer.invoke('update:state'),
+  onUpdateReady: on('update:ready'),
+  pluginsState: (agent) => ipcRenderer.invoke('plugins:state', agent),
+  pluginsAction: (agent, action, arg) => ipcRenderer.invoke('plugins:action', agent, action, arg),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
   openUrl: (u) => ipcRenderer.invoke('url:open', u),
 
   saveTasks: (list) => ipcRenderer.invoke('tasks:save', list),
@@ -51,6 +60,7 @@ contextBridge.exposeInMainWorld('stella', {
   onOpenChat: on('chat:open'),
   onNewChat: on('chat:new'),
   onFocusComposer: on('composer:focus'),
+  onAlert: on('alert'),
   onToast: on('toast'),
   onTermData: on('term:data'),
   onTermExit: on('term:exit')

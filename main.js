@@ -10,6 +10,10 @@ const claudeProvider = require('./src/main/providers/claude');
 const codexProvider = require('./src/main/providers/codex');
 const openaiProvider = require('./src/main/providers/openai');
 const { createImages } = require('./src/main/images');
+const { createI18n } = require('./src/main/i18n');
+const { createPlugins } = require('./src/main/plugins');
+const { createMemory } = require('./src/main/memory');
+const { createUpdater } = require('./src/main/updater');
 
 app.setAppUserModelId('com.stella.desktop');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
@@ -17,7 +21,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 let win = null;
 let tray = null;
 let quitting = false;
-let store, runner, scheduler, terms, images;
+let tr = (s) => s, plugins, memory, store, runner, scheduler, terms, images, updater;
 const startHidden = process.argv.includes('--hidden');
 const ICON = path.join(__dirname, 'src', 'assets', 'icon.png');
 const ICON_ICO = path.join(__dirname, 'src', 'assets', 'icon.ico');
@@ -38,7 +42,7 @@ function notify({ title, body, chatId, onlyIfHidden }) {
   const s = store.getSettings();
   if (!s.notifications || !Notification.isSupported()) return;
   if (onlyIfHidden && win && win.isVisible() && win.isFocused()) return;
-  const n = new Notification({ title, body: body || '', icon: ICON, silent: false });
+  const n = new Notification({ title: tr(title), body: tr(body || ''), icon: ICON, silent: false });
   n.on('click', () => showWindow(chatId));
   n.show();
 }
@@ -139,10 +143,10 @@ function createTray() {
   tray = new Tray(img);
   tray.setToolTip('Stella');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Открыть Stella', click: () => showWindow() },
-    { label: 'Новый чат', click: () => { showWindow(); broadcast('chat:new'); } },
+    { label: tr('Открыть Stella'), click: () => showWindow() },
+    { label: tr('Новый чат'), click: () => { showWindow(); broadcast('chat:new'); } },
     { type: 'separator' },
-    { label: 'Выход', click: () => { quitting = true; app.quit(); } }
+    { label: tr('Выход'), click: () => { quitting = true; app.quit(); } }
   ]));
   tray.on('click', () => showWindow());
 }
@@ -193,7 +197,7 @@ function wireIpc() {
   ipcMain.handle('chatgpt:models', async () => openaiProvider.listModels(getApiKey()));
 
   ipcMain.handle('project:pick', async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: 'Папка проекта' });
+    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: tr('Папка проекта') });
     if (r.canceled || !r.filePaths[0]) return null;
     const p = r.filePaths[0];
     const s = store.getSettings();
@@ -207,6 +211,21 @@ function wireIpc() {
     broadcast('chats:changed', store.saveChat(c));
     return c;
   });
+  // «Перенести в новую сессию»: локальная выжимка чата -> заметка проекта -> новый чат с этим контекстом.
+  ipcMain.handle('chat:transfer', (_e, id) => {
+    const old = store.getChat(id);
+    if (!old || !old.messages.length) return null;
+    const handoff = memory.digest(old);
+    if (store.getSettings().memoryEnabled !== false) memory.add(old.cwd, handoff);
+    const c = store.createChat({ agent: old.agent, cwd: old.cwd, title: '↪ ' + old.title });
+    c.handoff = handoff;
+    broadcast('chats:changed', store.saveChat(c));
+    return c;
+  });
+  ipcMain.handle('plugins:state', (_e, agent) => (agent === 'codex' ? plugins.codexState() : plugins.claudeState()));
+  ipcMain.handle('plugins:action', (_e, agent, action, arg) => (agent === 'codex' ? plugins.codexAction(action, arg) : plugins.claudeAction(action, arg)));
+  ipcMain.handle('memory:get', (_e, cwd) => memory.get(cwd));
+  ipcMain.handle('memory:set', (_e, cwd, text) => memory.set(cwd, text));
   ipcMain.handle('chat:get', (_e, id) => store.getChat(id));
   ipcMain.handle('chat:delete', (_e, id) => { runner.stop(id); store.deleteChat(id); return store.listChats(); });
   ipcMain.handle('chat:rename', (_e, id, title) => {
@@ -222,7 +241,7 @@ function wireIpc() {
   ipcMain.handle('chat:approve', (_e, id, reqId, answer) => runner.approve(id, reqId, answer));
 
   ipcMain.handle('files:pick', async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], title: 'Прикрепить файлы' });
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], title: tr('Прикрепить файлы') });
     return r.canceled ? [] : r.filePaths.map((p) => ({ name: path.basename(p), path: p }));
   });
   ipcMain.handle('file:read', (_e, p) => {
@@ -255,7 +274,10 @@ app.on('second-instance', () => showWindow());
 
 app.whenReady().then(() => {
   store = createStore(app.getPath('userData'));
-  runner = createRunner({ store, broadcast, notify, getApiKey });
+  tr = createI18n({ getSettings: () => store.getSettings(), systemLocale: app.getLocale() }).tr;
+  plugins = createPlugins({ store });
+  memory = createMemory(app.getPath('userData'));
+  runner = createRunner({ store, broadcast, notify, getApiKey, memory });
   scheduler = createScheduler({ store, runner, broadcast, notify });
   terms = createTerminals({ broadcast });
   images = createImages({ store, getCreds: getCfCreds });
@@ -266,11 +288,43 @@ app.whenReady().then(() => {
   if (!registerHotkey(s.hotkey)) broadcast('toast', 'Не удалось назначить горячую клавишу ' + s.hotkey);
   applyAutostart(s.autostart);
   scheduler.start();
+  updater = createUpdater({ app, dialog, getWindow: () => win, broadcast, canInstall: () => !Object.values(runner.states()).some((s) => s && !['idle', 'error'].includes(s)), beforeInstall: () => { quitting = true; } });
+  if (app.isPackaged) { setTimeout(() => updater.check({ silent: true }), 15000); setInterval(() => updater.check({ silent: true }), 6 * 3600 * 1000); }
+  ipcMain.handle('update:check', () => updater.check({ silent: false }));
+  ipcMain.handle('update:install', () => updater.installNow());
+  ipcMain.handle('update:state', () => updater.readyInfo());
+  pollClaudeLimits();
+  limitsTimer = setInterval(pollClaudeLimits, 60 * 1000);
 });
+
+let limitsTimer = null;
+async function pollClaudeLimits() {
+  try {
+    const credPath = path.join(require('os').homedir(), '.claude', '.credentials.json');
+    const token = JSON.parse(fs.readFileSync(credPath, 'utf8')).claudeAiOauth?.accessToken;
+    if (!token) return;
+    const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: { Authorization: 'Bearer ' + token, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'stella' }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const k of ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet']) {
+      const v = data[k];
+      if (!v || v.utilization == null) continue;
+      store.setLimit('claude', k, {
+        utilization: v.utilization / 100,
+        resetsAt: v.resets_at ? Math.floor(Date.parse(v.resets_at) / 1000) : undefined,
+        status: v.utilization >= 100 ? 'rejected' : 'allowed'
+      });
+    }
+    broadcast('usage:changed', store.getUsage());
+  } catch (e) { /* offline or no credentials: keep last known values */ }
+}
 
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   try { runner.stopAll(); terms.killAll(); scheduler.stop(); } catch (e) {}
+  try { updater && updater.installOnQuit(); } catch (e) {}
 });
 app.on('window-all-closed', () => { quitting = true; app.quit(); });

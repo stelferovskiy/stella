@@ -2,6 +2,19 @@
 !include LogicLib.nsh
 
 ; Страница выбора ярлыков (после выбора папки установки)
+!macro customHeader
+  ; Цвета Stella: тёмный фон шапки и страниц приветствия/завершения, светлый текст, акцент
+  !ifdef MUI_BGCOLOR
+    !undef MUI_BGCOLOR
+  !endif
+  !define MUI_BGCOLOR 08080D
+  !ifdef MUI_TEXTCOLOR
+    !undef MUI_TEXTCOLOR
+  !endif
+  !define MUI_TEXTCOLOR ECEAE4
+  BrandingText "Stella"
+!macroend
+
 !macro customPageAfterChangeDir
   Var StellaShortcutDialog
   Var StellaDesktopBox
@@ -46,16 +59,28 @@
 
 !macro customInstall
   !ifndef BUILD_UNINSTALLER
+    ; Тихое обновление (/S): страницы нет, поэтому ярлыки создаём сами, если их нет
+    ${If} ${Silent}
+      ${IfNot} ${FileExists} "$DESKTOP\Stella.lnk"
+        CreateShortCut "$DESKTOP\Stella.lnk" "$INSTDIR\Stella.exe" "" "$INSTDIR\resources\icon.ico" 0
+      ${EndIf}
+      ${IfNot} ${FileExists} "$SMPROGRAMS\Stella.lnk"
+        CreateShortCut "$SMPROGRAMS\Stella.lnk" "$INSTDIR\Stella.exe" "" "$INSTDIR\resources\icon.ico" 0
+      ${EndIf}
+    ${EndIf}
     ${If} $StellaWantDesktop == ${BST_CHECKED}
-      CreateShortCut "$DESKTOP\Stella.lnk" "$INSTDIR\Stella.exe" "" "$INSTDIR\resources\icon.ico" 0
+        CreateShortCut "$DESKTOP\Stella.lnk" "$INSTDIR\Stella.exe" "" "$INSTDIR\resources\icon.ico" 0
     ${EndIf}
     ${If} $StellaWantStart == ${BST_CHECKED}
-      CreateShortCut "$SMPROGRAMS\Stella.lnk" "$INSTDIR\Stella.exe" "" "$INSTDIR\resources\icon.ico" 0
+        CreateShortCut "$SMPROGRAMS\Stella.lnk" "$INSTDIR\Stella.exe" "" "$INSTDIR\resources\icon.ico" 0
     ${EndIf}
   !endif
 !macroend
 
 !macro customUnInstall
-  Delete "$DESKTOP\Stella.lnk"
-  Delete "$SMPROGRAMS\Stella.lnk"
+  ; Тихий запуск деинсталлятора = обновление: ярлыки оставляем
+  ${IfNot} ${Silent}
+    Delete "$DESKTOP\Stella.lnk"
+    Delete "$SMPROGRAMS\Stella.lnk"
+  ${EndIf}
 !macroend

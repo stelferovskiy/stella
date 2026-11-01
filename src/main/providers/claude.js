@@ -163,6 +163,7 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
   };
   if (chat.claudeSession) options.resume = chat.claudeSession;
   if (settings.claude.model) options.model = settings.claude.model;
+  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(settings.claude.effort)) options.effort = settings.claude.effort;
 
   const streamed = new Set();
   let currentStreamId = null;

@@ -42,6 +42,7 @@ function createStore(baseDir) {
     closeToTray: true,
     autostart: false,
     notifications: true,
+    memoryEnabled: true,
     hudOpen: true,
     skills: DEFAULT_SKILLS,
     directives: [

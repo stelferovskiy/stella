@@ -50,7 +50,7 @@ async function run({ chat, text, attachments, settings, apiKey, emit, abortContr
     res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
-      body: JSON.stringify({ model: settings.chatgpt.apiModel || 'gpt-5', messages, stream: true, stream_options: { include_usage: true } }),
+      body: JSON.stringify({ model: settings.chatgpt.apiModel || 'gpt-5', ...(['minimal', 'low', 'medium', 'high'].includes(settings.chatgpt.effort) ? { reasoning_effort: settings.chatgpt.effort } : {}), messages, stream: true, stream_options: { include_usage: true } }),
       signal: abortController.signal
     });
   } catch (err) {

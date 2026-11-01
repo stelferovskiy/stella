@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; frame-src file: data: about:; connect-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; frame-src file: data: about:; connect-src 'self'">
 <title>Stella</title>
 <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
 <link rel="stylesheet" href="styles.css">
@@ -12,7 +12,7 @@
 
   <header class="top">
     <div class="brand">
-      <div class="logo">STELLA <span>/ v2</span></div>
+      <div class="logo">STELLA <span id="appVersion">/ v2</span></div>
       <div class="sub">ТВОЙ КОМАНДНЫЙ ЦЕНТР</div>
     </div>
     <nav class="tabs" aria-label="Агент">
@@ -54,7 +54,9 @@
       <div class="side-foot">
         <button type="button" class="foot-btn" id="openTasks"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Расписание</button>
         <button type="button" class="foot-btn" id="openDock"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>Терминал</button>
+        <button type="button" class="foot-btn" id="openPlugins"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 3v4M15 3v4M7 7h10v5a5 5 0 0 1-10 0z"/><path d="M12 17v4"/></svg>Плагины</button>
         <button type="button" class="foot-btn" id="openSettings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</button>
+        <button type="button" class="foot-btn" id="checkUpdateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Проверить обновления</button>
       </div>
     </aside>
 
@@ -73,6 +75,7 @@
             <div id="chatTitle" class="chat-title" title="Нажмите, чтобы переименовать"></div>
             <div class="chat-meta"><span id="chatAgent" class="agent-pill"></span><span id="chatCwd" class="chat-cwd"></span></div>
           </div>
+          <button type="button" id="transferBtn" class="btn" title="Сжать итоги этого чата и продолжить в новой сессии с меньшим расходом токенов">Перенести в новую сессию</button>
           <div id="chatState" class="chat-state" role="status"></div>
         </div>
         <div id="messages" class="messages" aria-live="polite"></div>
@@ -145,6 +148,10 @@
           </button>
           <label class="sr" for="modeSelect">Режим</label>
           <select id="modeSelect" class="mode-select"></select>
+          <label class="sr" for="modelSelect">Модель</label>
+          <select id="modelSelect" class="mode-select" title="Модель"></select>
+          <label class="sr" for="effortSelect">Уровень размышлений</label>
+          <select id="effortSelect" class="mode-select" title="Уровень размышлений"></select>
           <span id="composerHint" class="composer-hint">Enter — отправить · Shift+Enter — новая строка</span>
           <button type="submit" id="sendBtn" class="send-btn" aria-label="Отправить">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6"/></svg>
@@ -220,6 +227,7 @@
 <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script src="../shared/reducer.js"></script>
+<script src="i18n.js"></script>
 <script src="md.js"></script>
 <script src="orb.js"></script>
 <script src="app.js"></script>

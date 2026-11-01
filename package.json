@@ -1,7 +1,7 @@
 {
   "name": "stella",
   "productName": "Stella",
-  "version": "2.2.0",
+  "version": "1.6.0",
   "description": "Stella — a futuristic desktop command center for Claude, Codex and ChatGPT",
   "main": "main.js",
   "author": "stelferovskiy",
@@ -75,7 +75,10 @@
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
       "artifactName": "Stella-Setup-${version}.exe",
-      "uninstallDisplayName": "Stella"
+      "uninstallDisplayName": "Stella",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp"
     }
   },
   "license": "MIT",
@@ -83,5 +86,5 @@
     "type": "git",
     "url": "https://github.com/stelferovskiy/stella.git"
   },
-  "homepage": "https://stelferovskiy.github.io/stella/"
+  "homepage": "https://github.com/stelferovskiy/stella"
 }

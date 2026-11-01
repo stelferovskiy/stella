@@ -9,7 +9,7 @@ const openai = require('./providers/openai');
 
 const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 
-function createRunner({ store, broadcast, notify, getApiKey }) {
+function createRunner({ store, broadcast, notify, getApiKey, memory }) {
   const active = new Map(); // chatId -> { abort, approvals: Map, msgId, state }
 
   function makeTitle(text) {
@@ -54,6 +54,12 @@ function createRunner({ store, broadcast, notify, getApiKey }) {
     if (!chat.messages.length) chat.title = makeTitle(text || (atts[0] && atts[0].name));
     chat.messages.push(userMsg, msg);
     const historyIndex = chat.messages.length - 2;
+    // Локальная память: в первое сообщение нового чата подмешиваем сжатый контекст (в историю чата он не пишется).
+    let promptText = text;
+    if (historyIndex === 0 && memory && store.getSettings().memoryEnabled !== false) {
+      const ctx = chat.handoff ? memory.forHandoff(chat.handoff) : memory.forNewChat(chat.cwd);
+      if (ctx) promptText = ctx + (text || '');
+    }
     broadcast('chats:changed', store.saveChat(chat));
     broadcast('chat:message', { chatId, message: userMsg });
     broadcast('chat:message', { chatId, message: msg });
@@ -107,20 +113,20 @@ function createRunner({ store, broadcast, notify, getApiKey }) {
     try {
       if (chat.agent === 'claude') {
         result = await claude.run({
-          chat, text, attachments: atts, settings, emit, emitLive, requestApproval, abortController, mode,
+          chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, abortController, mode,
           onSession: (id) => { chat.claudeSession = id; scheduleSave(); },
           onLimit: (info) => { store.setLimit('claude', info.rateLimitType || 'unknown', info); broadcast('usage:changed', store.getUsage()); }
         });
       } else if (chat.agent === 'codex') {
-        result = await codex.run({ chat, text, attachments: atts, settings, emit, emitLive, abortController, mode, flavor: 'codex', onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+        result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, abortController, mode, flavor: 'codex', onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
       } else if (chat.agent === 'chatgpt') {
         if (settings.chatgpt.backend === 'api') {
-          result = await openai.run({ chat, text, attachments: atts, settings, apiKey: getApiKey(), emit, abortController, historyIndex });
+          result = await openai.run({ chat, text: promptText, attachments: atts, settings, apiKey: getApiKey(), emit, abortController, historyIndex });
         } else {
           const space = path.join(store.dir, 'chatgpt-space');
           fs.mkdirSync(space, { recursive: true });
           const proxy = Object.assign({}, chat, { cwd: space });
-          result = await codex.run({ chat: proxy, text, attachments: atts, settings, emit, abortController, flavor: 'chatgpt', onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+          result = await codex.run({ chat: proxy, text: promptText, attachments: atts, settings, emit, abortController, flavor: 'chatgpt', onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
         }
       }
     } catch (err) {

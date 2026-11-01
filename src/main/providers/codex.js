@@ -40,11 +40,13 @@ async function run({ chat, text, attachments, settings, emit, emitLive, onThread
   const isChat = flavor === 'chatgpt';
   const sandbox = isChat ? 'read-only' : (mode || settings.codex.sandbox || 'read-only');
   const model = isChat ? settings.chatgpt.model : settings.codex.model;
+  const effort = isChat ? settings.chatgpt.effort : settings.codex.effort;
 
   const args = [js, 'exec', '--json', '--skip-git-repo-check', '-C', chat.cwd];
   if (sandbox === 'danger-full-access') args.push('--dangerously-bypass-approvals-and-sandbox');
   else args.push('-s', sandbox);
   if (model) args.push('-m', model);
+  if (['minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort)) args.push('-c', 'model_reasoning_effort="' + effort + '"');
   if (chat.codexThread) args.push('resume', chat.codexThread);
   args.push('-');
   const images = (attachments || []).filter((a) => a.kind === 'image');

@@ -19,6 +19,8 @@
   const STATE_LABEL = { thinking: 'ДУМАЕТ', streaming: 'ПИШЕТ ОТВЕТ', tool: 'РАБОТАЕТ С ИНСТРУМЕНТАМИ', waiting: 'ЖДЁТ ПОДТВЕРЖДЕНИЯ', error: 'ОШИБКА', idle: '' };
 
   const init = await api.init();
+  // Язык интерфейса: из настроек; при смене — запоминаем и перезагружаем окно, чтобы перевести всё сразу.
+  if (window.I18N && init.settings.language && init.settings.language !== I18N.lang) { I18N.set(init.settings.language); location.reload(); return; }
   const S = {
     settings: init.settings,
     chats: init.chats,
@@ -33,6 +35,7 @@
     search: '',
     studio: false
   };
+  if (init.env && init.env.version) $('appVersion').textContent = '/ v' + init.env.version;
 
   /* ---------- утилиты ---------- */
   function toast(text, ms) {
@@ -60,7 +63,7 @@
   function tickClock() {
     const d = new Date();
     $('clock').textContent = hhmm(d);
-    $('date').textContent = d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
+    $('date').textContent = d.toLocaleDateString(I18N.locale, { weekday: 'short', day: 'numeric', month: 'long' });
   }
   setInterval(tickClock, 1000); tickClock();
 
@@ -92,12 +95,13 @@
     root.setProperty('--accent-rgb', a.rgb);
     root.setProperty('--glow', a.glow);
     orbBig.setColor(a.color); orbMini.setColor(a.color);
-    document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', S.studio ? b.dataset.agent === 'images' : b.dataset.agent === viewAgent()));
+    document.querySelectorAll('.tab[data-agent]').forEach((b) => b.classList.toggle('on', S.studio ? b.dataset.agent === 'images' : b.dataset.agent === viewAgent()));
     if (orbStudio) orbStudio.setColor(AGENTS.images.color);
     $('heroName').textContent = a.name;
     $('heroSub').textContent = a.sub;
     $('input').placeholder = viewAgent() === 'chatgpt' ? 'Спроси что угодно…' : 'Спроси или дай задачу для папки проекта…';
     renderModeSelect();
+    renderModelSelects();
   }
   function renderModeSelect() {
     const agent = viewAgent();
@@ -124,7 +128,150 @@
     else if (viewAgent() === 'codex') await saveSettings({ codex: Object.assign({}, S.settings.codex, { sandbox: v }) });
     if (v === 'bypassPermissions' || v === 'danger-full-access') toast('Полный доступ: агент будет выполнять любые действия без подтверждения.', 5000);
   });
-  document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', async () => {
+
+  /* ---------- модель и уровень размышлений ---------- */
+  const EFFORT_OFF = ['', 'Размышление: авто'];
+  const MODEL_LISTS = {
+    claude: { models: [['', 'Модель: авто'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku'], ['opusplan', 'Opus (план) + Sonnet']],
+      efforts: [EFFORT_OFF, ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое'], ['xhigh', 'Очень высокое'], ['max', 'Максимум']] },
+    codex: { models: [['', 'Модель: авто'], ['gpt-5-codex', 'GPT-5 Codex'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini']],
+      efforts: [EFFORT_OFF, ['minimal', 'Минимальное'], ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']] },
+    chatgpt: { models: [['', 'Модель: авто'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini'], ['gpt-4.1', 'GPT-4.1']],
+      efforts: [EFFORT_OFF, ['minimal', 'Минимальное'], ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']] }
+  };
+  function modelKey(agent) { return agent === 'chatgpt' && S.settings.chatgpt.backend === 'api' ? 'apiModel' : 'model'; }
+  function fillSelect(sel, list, cur) {
+    sel.textContent = '';
+    const vals = list.map((x) => x[0]);
+    const all = cur && !vals.includes(cur) ? list.concat([[cur, cur]]) : list;
+    for (const [v, l] of all) { const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === (cur || '')) o.selected = true; sel.append(o); }
+  }
+  function renderModelSelects() {
+    const agent = viewAgent();
+    const L = MODEL_LISTS[agent];
+    const cfg = S.settings[agent] || {};
+    fillSelect($('modelSelect'), L.models, cfg[modelKey(agent)] || '');
+    fillSelect($('effortSelect'), L.efforts, cfg.effort || '');
+  }
+  $('modelSelect').addEventListener('change', (e) => { const a = viewAgent(); saveSettings({ [a]: Object.assign({}, S.settings[a], { [modelKey(a)]: e.target.value }) }); });
+  $('effortSelect').addEventListener('change', (e) => { const a = viewAgent(); saveSettings({ [a]: Object.assign({}, S.settings[a], { effort: e.target.value }) }); });
+
+  /* ---------- плагины ---------- */
+  let plugAgent = 'claude';
+  async function openPlugins() {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal plug-modal';
+    wrap.innerHTML = '<div class="modal-box plug-box"><div class="modal-head"><h2>Плагины</h2><button type="button" class="icon-btn ghost" id="plugClose" aria-label="Закрыть">✕</button></div>' +
+      '<div class="plug-tabs"><button type="button" class="tab on" data-pa="claude">Claude Code</button><button type="button" class="tab" data-pa="codex">Codex · MCP-серверы</button></div>' +
+      '<div class="modal-body plug-body"></div></div>';
+    const body = wrap.querySelector('.plug-body');
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    wrap.querySelector('#plugClose').addEventListener('click', close);
+    document.body.append(wrap);
+    let busy = false;
+    const act = async (btn, label, fn) => {
+      if (busy) return; busy = true;
+      btn.textContent = label; btn.disabled = true;
+      let r; try { r = await fn(); } catch (e) { r = { ok: false, err: String(e.message || e) }; }
+      busy = false;
+      if (!r.ok) showAlert({ kind: 'error', title: 'Не получилось', text: (r.err || r.out || '').slice(0, 800) });
+      else toast(plugAgent === 'claude' ? 'Готово. Изменения применятся в новых чатах Claude.' : 'Готово.', 3500);
+      await draw();
+    };
+    async function draw() {
+      body.innerHTML = '<div class="muted-note">Загрузка…</div>';
+      const st = await api.pluginsState(plugAgent);
+      body.textContent = '';
+      if (st.error && !(st.installed || st.servers || []).length && !(st.catalog || []).length) {
+        const n = document.createElement('div'); n.className = 'err-card'; n.textContent = st.error; body.append(n); return;
+      }
+      plugAgent === 'claude' ? drawClaude(st) : drawCodex(st);
+    }
+    function row(title, sub, tag) {
+      const r = document.createElement('div'); r.className = 'plug-row';
+      r.innerHTML = '<div class="plug-info"><div class="plug-name"></div><div class="plug-desc"></div></div><div class="plug-act"></div>';
+      r.querySelector('.plug-name').textContent = title;
+      if (tag) { const t = document.createElement('span'); t.className = 'plug-tag'; t.textContent = tag; r.querySelector('.plug-name').append(t); }
+      r.querySelector('.plug-desc').textContent = sub || '';
+      return r;
+    }
+    function mkBtn(text, cls, fn) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ' + (cls || ''); b.textContent = text; b.addEventListener('click', () => fn(b)); return b; }
+    function drawClaude(st) {
+      const bar = document.createElement('div'); bar.className = 'plug-bar';
+      bar.innerHTML = '<input class="input" id="plugSearch" autocomplete="off"><div class="plug-filter"><button type="button" class="btn on" data-f="all">Все</button><button type="button" class="btn" data-f="inst">Установленные</button></div>';
+      bar.querySelector('#plugSearch').placeholder = 'Поиск среди ' + st.catalog.length + ' плагинов…';
+      body.append(bar);
+      const list = document.createElement('div'); list.className = 'plug-list'; body.append(list);
+      let filter = 'all';
+      const instMap = new Map(st.installed.map((p) => [p.id, p]));
+      const render = () => {
+        const q = bar.querySelector('#plugSearch').value.trim().toLowerCase();
+        list.textContent = '';
+        let items = st.catalog.filter((c) => (filter === 'all' || c.installed) && (!q || (c.name + ' ' + c.description + ' ' + c.category + ' ' + c.market).toLowerCase().includes(q)));
+        if (filter === 'inst') for (const p of st.installed) if (!st.catalog.some((c) => c.id === p.id) && (!q || p.id.toLowerCase().includes(q))) items.push({ id: p.id, name: p.id.split('@')[0], market: p.id.split('@')[1] || '', description: '', installed: true });
+        items.sort((a, b) => Number(b.installed) - Number(a.installed) || a.name.localeCompare(b.name));
+        const total = items.length; items = items.slice(0, 60);
+        if (!items.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = 'Ничего не найдено.'; list.append(n); }
+        for (const c of items) {
+          const inst = instMap.get(c.id);
+          const r = row(c.name, c.description, c.installed ? (inst && !inst.enabled ? 'выключен' : 'установлен') : c.market);
+          const a = r.querySelector('.plug-act');
+          if (!c.installed) a.append(mkBtn('Установить', 'accent', (b) => act(b, 'Установка…', () => api.pluginsAction('claude', 'install', c.id))));
+          else {
+            a.append(mkBtn(inst && inst.enabled ? 'Выключить' : 'Включить', '', (b) => act(b, '…', () => api.pluginsAction('claude', inst && inst.enabled ? 'disable' : 'enable', c.id))));
+            a.append(mkBtn('Обновить', '', (b) => act(b, 'Обновление…', () => api.pluginsAction('claude', 'update', c.id))));
+            a.append(mkBtn('Удалить', 'danger', (b) => act(b, 'Удаление…', () => api.pluginsAction('claude', 'uninstall', c.id))));
+          }
+          list.append(r);
+        }
+        if (total > items.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = 'Показаны первые 60 из ' + total + '. Уточните поиск.'; list.append(n); }
+      };
+      bar.querySelector('#plugSearch').addEventListener('input', render);
+      bar.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.f; bar.querySelectorAll('[data-f]').forEach((x) => x.classList.toggle('on', x === b)); render(); }));
+      render();
+      const src = document.createElement('div'); src.className = 'plug-src';
+      src.innerHTML = '<h3>ИСТОЧНИКИ (МАРКЕТПЛЕЙСЫ)</h3><div class="plug-srcs plug-list"></div><div class="row"><input class="input" id="mkAdd" placeholder="владелец/репозиторий на GitHub или ссылка на git" autocomplete="off"></div>';
+      const sl = src.querySelector('.plug-srcs');
+      for (const m of st.markets) {
+        const r = row(m.name, m.source);
+        r.querySelector('.plug-act').append(mkBtn('Удалить', 'danger', (b) => act(b, '…', () => api.pluginsAction('claude', 'market-remove', m.name))));
+        sl.append(r);
+      }
+      src.querySelector('.row').append(mkBtn('Добавить источник', 'accent', (b) => { const v = src.querySelector('#mkAdd').value.trim(); if (v) act(b, 'Добавляю…', () => api.pluginsAction('claude', 'market-add', v)); }));
+      src.querySelector('.row').append(mkBtn('Обновить каталоги', '', (b) => act(b, 'Обновляю…', () => api.pluginsAction('claude', 'market-update', ''))));
+      body.append(src);
+    }
+    function drawCodex(st) {
+      const hint = document.createElement('div'); hint.className = 'muted-note';
+      hint.textContent = 'У Codex нет каталога плагинов: расширения подключаются как MCP-серверы. Добавьте сервер командой запуска (например, npx -y @modelcontextprotocol/server-filesystem C:\\папка) или адресом http(s).';
+      body.append(hint);
+      const list = document.createElement('div'); list.className = 'plug-list'; body.append(list);
+      if (!st.servers.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = 'MCP-серверов пока нет.'; list.append(n); }
+      for (const s of st.servers) {
+        const r = row(s.name, s.detail || s.transport, s.enabled ? '' : 'выключен');
+        r.querySelector('.plug-act').append(mkBtn('Удалить', 'danger', (b) => act(b, '…', () => api.pluginsAction('codex', 'remove', { name: s.name }))));
+        list.append(r);
+      }
+      const f = document.createElement('div'); f.className = 'plug-src';
+      f.innerHTML = '<h3>ДОБАВИТЬ MCP-СЕРВЕР</h3><div class="row"><input class="input" id="mcpName" placeholder="имя" autocomplete="off" style="max-width:160px"><input class="input" id="mcpCmd" placeholder="команда запуска или https://адрес" autocomplete="off"></div>';
+      f.querySelector('.row').append(mkBtn('Добавить', 'accent', (b) => {
+        const name = f.querySelector('#mcpName').value.trim(), v = f.querySelector('#mcpCmd').value.trim();
+        if (!name || !v) { toast('Укажите имя и команду или адрес.'); return; }
+        act(b, 'Добавляю…', () => api.pluginsAction('codex', 'add', /^https?:\/\//i.test(v) ? { name, url: v } : { name, command: v }));
+      }));
+      body.append(f);
+    }
+    wrap.querySelectorAll('[data-pa]').forEach((b) => b.addEventListener('click', () => { plugAgent = b.dataset.pa; wrap.querySelectorAll('[data-pa]').forEach((x) => x.classList.toggle('on', x === b)); draw(); }));
+    plugAgent = viewAgent() === 'codex' ? 'codex' : 'claude';
+    wrap.querySelectorAll('[data-pa]').forEach((x) => x.classList.toggle('on', x.dataset.pa === plugAgent));
+    draw();
+  }
+  $('openPlugins').addEventListener('click', openPlugins);
+
+  document.querySelectorAll('.tab[data-agent]').forEach((b) => b.addEventListener('click', async () => {
     if (b.dataset.agent === 'images') { openStudio(); return; }
     if (S.studio) { S.studio = false; S.agent = b.dataset.agent; saveSettings({ agent: S.agent }); openDraft(); return; }
     S.agent = b.dataset.agent;
@@ -314,10 +461,11 @@
       : (S.settings.skills || []);
     for (const s of skills) {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'skill'; b.textContent = s.label; b.title = s.prompt;
+      b.type = 'button'; b.className = 'skill'; b.textContent = I18N.tx(s.label); b.title = I18N.tx(s.prompt);
       b.addEventListener('click', () => {
-        if (/[:\s]$/.test(s.prompt)) { $('input').value = s.prompt; autosize(); $('input').focus(); }
-        else submit(s.prompt);
+        const pr = I18N.tx(s.prompt);
+        if (/[:\s]$/.test(s.prompt)) { $('input').value = pr; autosize(); $('input').focus(); }
+        else submit(pr);
       });
       box.append(b);
     }
@@ -587,6 +735,25 @@
   });
 
   /* ---------- правая панель ---------- */
+  // Сворачиваемые блоки правой панели: каждый заголовок управляет блоком до следующего заголовка.
+  (function initHudSections() {
+    const hud = $('hud');
+    const collapsed = new Set(S.settings.hudCollapsed || []);
+    [...hud.querySelectorAll(':scope > .hud-label')].forEach((label) => {
+      const key = label.textContent.replace('●', '').trim();
+      const body = document.createElement('div');
+      body.className = 'hud-body';
+      let n = label.nextElementSibling;
+      while (n && !n.classList.contains('hud-label')) { const next = n.nextElementSibling; body.append(n); n = next; }
+      label.after(body);
+      label.setAttribute('role', 'button'); label.tabIndex = 0;
+      const apply = () => { const c = collapsed.has(key); body.hidden = c; label.classList.toggle('collapsed', c); label.setAttribute('aria-expanded', String(!c)); };
+      const toggle = async () => { collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key); apply(); await saveSettings({ hudCollapsed: [...collapsed] }); };
+      label.addEventListener('click', toggle);
+      label.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+      apply();
+    });
+  })();
   function applyHud() { document.getElementById('app').classList.toggle('hud-hidden', S.settings.hudOpen === false); }
   $('hudToggle').addEventListener('click', async () => { await saveSettings({ hudOpen: S.settings.hudOpen === false }); applyHud(); });
 
@@ -638,7 +805,7 @@
       const d = document.createElement('div');
       d.className = 'limit';
       const v = pct == null ? '—' : Math.round(pct) + '%';
-      const resets = info.resetsAt ? new Date(info.resetsAt * (info.resetsAt < 1e12 ? 1000 : 1)).toLocaleString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      const resets = info.resetsAt ? new Date(info.resetsAt * (info.resetsAt < 1e12 ? 1000 : 1)).toLocaleString(I18N.locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
       d.innerHTML = '<div class="limit-head"><span></span><b></b></div><div class="bar"><div></div></div><div class="limit-foot"></div>';
       d.querySelector('.limit-head span').textContent = label;
       d.querySelector('.limit-head b').textContent = v;
@@ -1147,8 +1314,28 @@
     drawSkills();
     sk.querySelector('#addSkill').addEventListener('click', () => { skills.push({ label: 'Новый навык', prompt: '' }); drawSkills(); });
 
+    const langSect = el('<div class="sect"><h3>ЯЗЫК</h3><div class="field"><label for="langSel">Язык интерфейса</label><select id="langSel"><option value="ru">Русский</option><option value="en">English</option></select></div></div>');
+    langSect.querySelector('#langSel').value = I18N.lang;
+    langSect.querySelector('#langSel').addEventListener('change', async (e) => {
+      await saveSettings({ language: e.target.value });
+      I18N.set(e.target.value);
+      location.reload();
+    });
+    body.append(langSect);
+
+    const mem = el('<div class="sect"><h3>ЛОКАЛЬНАЯ ПАМЯТЬ ПРОЕКТА</h3><div class="muted-note"></div><label><input type="checkbox" id="memOn"> Подмешивать заметки в новые чаты</label><textarea id="memText" rows="8" spellcheck="false" style="width:100%"></textarea><div><button type="button" class="btn" id="memSave">Сохранить заметки</button></div></div>');
+    mem.querySelector('.muted-note').textContent = 'Короткие заметки по текущему проекту хранятся только на этом компьютере. Новый чат читает не всю старую переписку, а до ~2000 символов заметок. Кнопка «Перенести в новую сессию» в чате добавляет сюда итоги.';
+    mem.querySelector('#memOn').checked = S.settings.memoryEnabled !== false;
+    mem.querySelector('#memOn').addEventListener('change', (e) => saveSettings({ memoryEnabled: e.target.checked }));
+    api.memoryGet(S.settings.currentProject).then((t) => { mem.querySelector('#memText').value = t; });
+    mem.querySelector('#memSave').addEventListener('click', async () => { await api.memorySet(S.settings.currentProject, mem.querySelector('#memText').value); toast('Заметки сохранены.'); });
+    body.append(mem);
+
     const about = el('<div class="sect"><h3>О ПРОГРАММЕ</h3><div class="muted-note"></div></div>');
     about.querySelector('.muted-note').textContent = 'Stella ' + S.env.version + '. Данные чатов хранятся только на этом компьютере. Панель разработчика: Ctrl+Shift+I.';
+    const upd = document.createElement('button'); upd.type = 'button'; upd.className = 'btn'; upd.textContent = 'Проверить обновления';
+    upd.addEventListener('click', () => api.checkUpdate());
+    about.append(upd);
     body.append(about);
 
     openModal('settingsModal');
@@ -1261,9 +1448,48 @@
   api.onUsage((u) => { S.usage = u; renderLimits(); renderUsage(); });
   api.onTasks((t) => { S.tasks = t; });
   api.onOpenChat((id) => openChat(id));
+  let updReady = null;
+  function showUpdateReady(u) {
+    if (!u) return;
+    updReady = u;
+    const b = $('checkUpdateBtn');
+    b.lastChild.textContent = 'Перезапустить для обновления до ' + u.version;
+    b.style.color = 'var(--accent, #7cf)';
+  }
+  api.onUpdateReady(showUpdateReady);
+  api.updateState().then(showUpdateReady);
+  $('checkUpdateBtn').addEventListener('click', () => (updReady ? api.installUpdate() : api.checkUpdate()));
+  $('transferBtn').addEventListener('click', async () => {
+    if (!S.chat) return;
+    if (S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) { toast('Дождитесь ответа агента или нажмите «Стоп».'); return; }
+    const c = await api.transferChat(S.chat.id);
+    if (!c) { toast('В чате пока нечего переносить.'); return; }
+    await openChat(c.id);
+    toast('Создана новая сессия с сжатым контекстом (локально, без расхода токенов).');
+    $('input').focus();
+  });
   api.onNewChat(() => openDraft());
   api.onFocusComposer(() => $('input').focus());
   api.onToast((t) => toast(t, 5000));
+  // Окно сообщения в стиле Stella (вместо системных alert/dialog).
+  function showAlert({ kind, title, text }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'modal alert-modal';
+    wrap.setAttribute('role', 'alertdialog');
+    wrap.innerHTML = '<div class="modal-box alert-box"><div class="alert-bar"></div><div class="alert-body"><div class="alert-title"></div><div class="alert-text"></div></div><div class="alert-actions"><button type="button" class="btn accent">OK</button></div></div>';
+    wrap.querySelector('.alert-box').classList.add(kind === 'error' ? 'is-error' : 'is-info');
+    wrap.querySelector('.alert-title').textContent = title || '';
+    wrap.querySelector('.alert-text').textContent = text || '';
+    if (!text) wrap.querySelector('.alert-text').remove();
+    const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') close(); };
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    wrap.querySelector('button').addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.body.append(wrap);
+    wrap.querySelector('button').focus();
+  }
+  api.onAlert(showAlert);
 
   /* ---------- клавиатура ---------- */
   document.addEventListener('keydown', (e) => {
