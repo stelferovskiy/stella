@@ -64,8 +64,9 @@ section { padding: 80px 0; }
 h2 { font-family: var(--display); font-weight: 400; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.12; margin: 0 0 16px; letter-spacing: -.01em; }
 .sub { color: var(--muted); max-width: 680px; font-size: 18px; margin: 0; }
 
-.shot { margin-top: 36px; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03), 0 0 80px rgba(var(--accent-rgb), .08); background: #0B0B11; }
+.shot { margin: 36px 0 0; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03), 0 0 80px rgba(var(--accent-rgb), .08); background: #0B0B11; }
 .shot img { width: 100%; height: auto; display: block; }
+.shot a { display: block; cursor: zoom-in; }
 .shot figcaption { padding: 12px 18px; font-size: 14px; color: var(--muted); border-top: 1px solid var(--line); }
 
 .bridge-points { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 28px; }
@@ -167,7 +168,7 @@ footer .sp { margin-left: auto; }
     <h2>Watch your agents think, type and build.</h2>
     <p class="sub">Give one task to several agents at once and see each of them work in its own lane, live.</p>
     <figure class="shot">
-      <img src="img/bridge.webp" srcset="img/bridge-1280.webp 1280w, img/bridge.webp 2560w" sizes="(max-width: 900px) 100vw, 1160px" alt="Stella Bridge: Claude typing an HTML file, Codex replaying a code fix, Studio generating an image" loading="lazy" width="2560" height="1391">
+      <a href="img/bridge.webp" target="_blank" rel="noopener" aria-label="Open full-size screenshot"><img src="img/bridge.webp" srcset="img/bridge-1280.webp 1280w, img/bridge.webp 2560w" sizes="(max-width: 900px) 100vw, 1160px" alt="Stella Bridge: Claude typing an HTML file, Codex replaying a code fix, Studio generating an image" loading="lazy" width="2560" height="1391"></a>
       <figcaption>Claude writes <code>index.html</code> character by character, Codex replays its fix to a failing test, Studio synthesizes an image.</figcaption>
     </figure>
     <div class="bridge-points">
@@ -193,11 +194,11 @@ footer .sp { margin-left: auto; }
     </div>
     <div class="two" style="margin-top:56px">
       <figure class="shot" style="margin:0">
-        <img src="img/chat.webp" srcset="img/chat-1280.webp 1280w, img/chat.webp 2560w" sizes="(max-width: 900px) 100vw, 580px" alt="Stella chat with Claude: steps, an approval card and a formatted answer" loading="lazy" width="2560" height="1391">
+        <a href="img/chat.webp" target="_blank" rel="noopener" aria-label="Open full-size screenshot"><img src="img/chat.webp" srcset="img/chat-1280.webp 1280w, img/chat.webp 2560w" sizes="(max-width: 900px) 100vw, 580px" alt="Stella chat with Claude: steps, an approval card and a formatted answer" loading="lazy" width="2560" height="1391"></a>
         <figcaption>Chat with steps, an approval card and a formatted answer.</figcaption>
       </figure>
       <figure class="shot" style="margin:0">
-        <img src="img/home.webp" srcset="img/home-1280.webp 1280w, img/home.webp 2560w" sizes="(max-width: 900px) 100vw, 580px" alt="Stella home screen with the star core, quick skills, Claude limits and token usage" loading="lazy" width="2560" height="1391">
+        <a href="img/home.webp" target="_blank" rel="noopener" aria-label="Open full-size screenshot"><img src="img/home.webp" srcset="img/home-1280.webp 1280w, img/home.webp 2560w" sizes="(max-width: 900px) 100vw, 580px" alt="Stella home screen with the star core, quick skills, Claude limits and token usage" loading="lazy" width="2560" height="1391"></a>
         <figcaption>The star core reacts to what the agent is doing; limits and usage on the right.</figcaption>
       </figure>
     </div>
