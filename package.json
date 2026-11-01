@@ -9,7 +9,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win nsis --x64 --publish never",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "i18n:check": "node tools/i18n-scan.js"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.1.0",

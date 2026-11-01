@@ -46,9 +46,9 @@
         while (i < lines.length && !lines[i].trim().startsWith(mark)) { body.push(lines[i]); i++; }
         i++;
         const code = body.join('\n');
-        out.push('<div class="code" data-lang="' + esc(lang) + '"><div class="code-bar"><span>' + esc(lang || 'код') + '</span><span class="code-actions">' +
-          (/^html?$/i.test(lang) ? '<button type="button" class="code-btn" data-act="preview">Предпросмотр</button>' : '') +
-          '<button type="button" class="code-btn" data-act="copy">Копировать</button></span></div><pre><code id="cb' + (codeId++) + '">' + esc(code) + '</code></pre></div>');
+        out.push('<div class="code" data-lang="' + esc(lang) + '"><div class="code-bar"><span>' + esc(lang || L('md.code')) + '</span><span class="code-actions">' +
+          (/^html?$/i.test(lang) ? '<button type="button" class="code-btn" data-act="preview">' + esc(L('preview.title')) + '</button>' : '') +
+          '<button type="button" class="code-btn" data-act="copy">' + esc(L('common.copy')) + '</button></span></div><pre><code id="cb' + (codeId++) + '">' + esc(code) + '</code></pre></div>');
         continue;
       }
       if (/^\s*$/.test(line)) { i++; continue; }

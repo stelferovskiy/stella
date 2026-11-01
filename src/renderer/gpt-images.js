@@ -2,11 +2,11 @@
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const label = (ru, en) => window.I18N?.lang === 'en' ? en : ru;
+  const L = (key, params) => window.L(key, params);
   let A, api, items = [], active = false, stage = '', requestId = null, revision = 0;
   let initialized = false, pending = false;
   const terminal = new Set(['done', 'error', 'stopped']);
-  const stages = () => ({ thinking: label('Обдумываю запрос…', 'Thinking…'), generating: label('Создаю изображение…', 'Generating image…'), saving: label('Сохраняю…', 'Saving…'), done: label('Изображение готово', 'Image ready'), stopped: label('Генерация остановлена', 'Generation stopped'), error: label('Не удалось создать изображение', 'Generation failed') });
+  const stages = () => ({ thinking: L('gptImages.stage.thinking'), generating: L('gptImages.stage.generating'), saving: L('gptImages.stage.saving'), done: L('gptImages.stage.done'), stopped: L('gptImages.stage.stopped'), error: L('gptImages.stage.error') });
   function error(message) { $('gptImagesError').textContent = String(message || ''); $('gptImagesError').hidden = !message; }
   function updateState(message) {
     $('gptImagesGenerate').disabled = active || pending;
@@ -23,20 +23,20 @@
   }
   function renderGallery() {
     const gallery = $('gptImagesGallery'); gallery.replaceChildren();
-    if (!items.length) { const empty = document.createElement('p'); empty.className = 'gallery-empty'; empty.textContent = label('Здесь появятся ваши изображения. Опишите идею и нажмите «Создать».', 'Your images will appear here. Describe an idea and select Generate.'); gallery.append(empty); }
+    if (!items.length) { const empty = document.createElement('p'); empty.className = 'gallery-empty'; empty.textContent = L('gptImages.empty'); gallery.append(empty); }
     for (const item of items) {
       const card = document.createElement('article'); card.className = 'gpt-image-card';
       const img = document.createElement('img'); img.src = A.fileUrl(item.file || item.path); img.alt = item.prompt || ''; img.loading = 'lazy';
       const file = item.file || item.path;
-      const preview = button(label('Открыть', 'Open'), () => api.openFile(file)); preview.classList.add('gpt-image-preview'); preview.replaceChildren(img);
-      preview.setAttribute('aria-label', label('Открыть изображение', 'Open image'));
+      const preview = button(L('common.open'), () => api.openFile(file)); preview.classList.add('gpt-image-preview'); preview.replaceChildren(img);
+      preview.setAttribute('aria-label', L('gptImages.openImage'));
       const caption = document.createElement('div'); caption.className = 'gpt-image-caption';
       const prompt = document.createElement('p'); prompt.textContent = item.prompt || ''; prompt.title = item.prompt || '';
-      const date = document.createElement('time'); const when = new Date(item.time || item.createdAt || item.created || item.date); date.textContent = Number.isNaN(when.getTime()) ? '' : when.toLocaleString(window.I18N?.lang === 'en' ? 'en-US' : 'ru-RU');
+      const date = document.createElement('time'); const when = new Date(item.time || item.createdAt || item.created || item.date); date.textContent = Number.isNaN(when.getTime()) ? '' : when.toLocaleString(L('locale'));
       const actions = document.createElement('div'); actions.className = 'acts';
-      const remove = button(label('Удалить', 'Delete'), async () => { ++revision; const r = await api.gptImagesDelete(item.id); ++revision; items = r.items || []; renderGallery(); });
+      const remove = button(L('common.delete'), async () => { ++revision; const r = await api.gptImagesDelete(item.id); ++revision; items = r.items || []; renderGallery(); });
       remove.disabled = pending;
-      actions.append(button(label('Открыть', 'Open'), () => api.openFile(file)), button(label('В папке', 'Reveal'), () => api.revealFile(file)), button(label('Сохранить как…', 'Save as…'), async () => { const r = await api.gptImagesSave(item.id); if (!r?.ok && !r?.canceled) throw new Error(r?.error || label('Не удалось сохранить', 'Save failed')); }), remove);
+      actions.append(button(L('common.open'), () => api.openFile(file)), button(L('common.inFolder'), () => api.revealFile(file)), button(L('gptImages.saveAs'), async () => { const r = await api.gptImagesSave(item.id); if (!r?.ok && !r?.canceled) throw new Error(r?.error || L('gptImages.saveFailed')); }), remove);
       caption.append(prompt, date, actions); card.append(preview, caption); gallery.append(card);
     }
   }
@@ -48,14 +48,14 @@
     const unavailable = data.supported === false || data.code === 'unavailable' || capabilities === false || capabilities?.available === false || capabilities?.imageGeneration === false || capabilities?.image_generation === false;
     if (!missingCli && !missingLogin && !unavailable) { box.hidden = true; return; }
     box.hidden = false;
-    const p = document.createElement('p'); p.textContent = missingCli ? label('Для GPT Images нужен установленный Codex CLI.', 'GPT Images requires Codex CLI.') : missingLogin ? label('Войдите в ChatGPT через Codex, чтобы создавать изображения.', 'Sign in to ChatGPT through Codex to generate images.') : label('Генерация изображений недоступна в этой версии Codex или для этого аккаунта.', 'Image generation is unavailable in this Codex version or for this account.'); box.append(p);
-    if (missingCli) box.append(button(label('Установить Codex', 'Install Codex'), () => A.runAction('install-codex')));
-    if (missingLogin || !missingCli) box.append(button(label('Войти в ChatGPT', 'Sign in to ChatGPT'), () => A.runAction('login-codex')));
-    box.append(button(label('Проверить снова', 'Check again'), refresh));
+    const p = document.createElement('p'); p.textContent = missingCli ? L('gptImages.setup.noCli') : missingLogin ? L('gptImages.setup.signIn') : L('gptImages.setup.unavailable'); box.append(p);
+    if (missingCli) box.append(button(L('action.installCodex'), () => A.runAction('install-codex')));
+    if (missingLogin || !missingCli) box.append(button(L('gptImages.setup.signInButton'), () => A.runAction('login-codex')));
+    box.append(button(L('gptImages.setup.checkAgain'), refresh));
   }
   async function refresh() {
     const before = revision;
-    if (typeof api.gptImagesList !== 'function') { setup({ capabilities: false }); error(label('GPT Images пока недоступен. Обновите Stella и Codex CLI.', 'GPT Images is unavailable. Update Stella and Codex CLI.')); return; }
+    if (typeof api.gptImagesList !== 'function') { setup({ capabilities: false }); error(L('gptImages.unavailable')); return; }
     try {
       const data = await api.gptImagesList();
       if (before !== revision) return;
@@ -76,7 +76,7 @@
   async function generate(event) {
     event.preventDefault(); if (active || pending) return;
     const prompt = $('gptImagesPrompt').value.trim(); if (!prompt) return $('gptImagesPrompt').focus();
-    if (typeof api.gptImagesGenerate !== 'function') return error(label('Генерация недоступна. Обновите Stella.', 'Generation unavailable. Update Stella.'));
+    if (typeof api.gptImagesGenerate !== 'function') return error(L('gptImages.generationUnavailable'));
     ++revision; pending = true; active = true; stage = 'thinking'; requestId = null; error(''); updateState(); renderGallery();
     try {
       const r = await api.gptImagesGenerate({ prompt, size: $('gptImagesSize').value, transparent: $('gptImagesTransparent').checked });
@@ -89,14 +89,14 @@
   function init() {
     if (initialized || !window.StellaApp) return false;
     initialized = true; A = window.StellaApp; api = A.api;
-    $('gptImagesDescription').textContent = label('Создавайте изображения через свой аккаунт ChatGPT — без API-ключа. Используется включённый лимит Codex, общий с чатами и задачами. Генерация изображений расходует его быстрее, чем обычный текст.', 'Create images with your ChatGPT account — no API key. Uses your included Codex allowance, shared with chats and tasks. Image generation consumes more usage than ordinary text.');
-    $('gptImagesPromptLabel').textContent = label('Описание изображения', 'Image description');
-    $('gptImagesPrompt').placeholder = label('Опишите сюжет, стиль, освещение и детали…', 'Describe the scene, style, lighting and details…');
-    $('gptImagesSizeLabel').textContent = label('Формат', 'Aspect');
-    for (const [v, ru, en] of [['auto', 'Авто', 'Auto'], ['square', 'Квадрат', 'Square'], ['landscape', 'Альбомный', 'Landscape'], ['portrait', 'Портретный', 'Portrait']]) { const o = document.createElement('option'); o.value = v; o.textContent = label(ru, en); $('gptImagesSize').append(o); }
-    $('gptImagesTransparentLabel').textContent = label('Прозрачный фон', 'Transparent background');
-    $('gptImagesHint').textContent = label('Формат и прозрачность передаются как пожелания в запросе. Точные размеры и прозрачность результата не гарантированы. Ctrl+Enter — создать.', 'Aspect and transparency are prompt instructions. Exact dimensions and transparency are not guaranteed. Ctrl+Enter to generate.');
-    $('gptImagesGenerate').textContent = label('Создать', 'Generate'); $('gptImagesStop').textContent = label('Остановить', 'Stop');
+    $('gptImagesDescription').textContent = L('gptImages.description');
+    $('gptImagesPromptLabel').textContent = L('gptImages.promptLabel');
+    $('gptImagesPrompt').placeholder = L('gptImages.promptPlaceholder');
+    $('gptImagesSizeLabel').textContent = L('gptImages.aspect');
+    for (const v of ['auto', 'square', 'landscape', 'portrait']) { const o = document.createElement('option'); o.value = v; o.textContent = L('gptImages.aspect.' + v); $('gptImagesSize').append(o); }
+    $('gptImagesTransparentLabel').textContent = L('gptImages.transparent');
+    $('gptImagesHint').textContent = L('gptImages.hint');
+    $('gptImagesGenerate').textContent = L('gptImages.generate'); $('gptImagesStop').textContent = L('common.stop');
     $('gptImagesForm').addEventListener('submit', generate);
     $('gptImagesPrompt').addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('gptImagesForm').requestSubmit(); } });
     $('gptImagesStop').addEventListener('click', async () => { const b = $('gptImagesStop'); b.disabled = true; try { if (await api.gptImagesStop()) { stage = 'stopped'; active = false; updateState(); } } catch (e) { error(e.message); } finally { b.disabled = false; } });

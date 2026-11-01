@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createTranslator } = require('../src/shared/i18n-core');
+const dicts = { ru: require('../src/locales/ru.json'), en: require('../src/locales/en.json') };
 const source = fs.readFileSync(path.join(__dirname, '../src/renderer/gpt-images.js'), 'utf8');
 class Element {
   constructor() { this.children = []; this.listeners = {}; this.value = ''; this.hidden = false; this.classList = { add() {}, toggle() {} }; }
@@ -17,7 +19,7 @@ function harness(overrides = {}, lang = 'en') {
   const elements = new Map(); const el = (id) => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   let progress, subscriptions = 0, opens = 0;
   const api = { gptImagesList: async () => ({ items: [], capabilities: { imageGeneration: true }, account: { loggedIn: true } }), gptImagesStatus: async () => ({ active: false }), onGptImagesProgress: (fn) => { progress = fn; subscriptions++; }, ...overrides };
-  const window = { I18N: { lang }, StellaApp: { api, S: { env: { codexJs: 'codex.js' } }, fileUrl: (p) => 'file:///' + p, openGptImages: () => opens++, runAction() {} } };
+  const window = { I18N: { lang }, L: createTranslator(dicts, () => lang), StellaApp: { api, S: { env: { codexJs: 'codex.js' } }, fileUrl: (p) => 'file:///' + p, openGptImages: () => opens++, runAction() {} } };
   vm.runInNewContext(source, { window, document: { readyState: 'complete', getElementById: el, createElement: () => new Element() }, setTimeout });
   return { el, window, progress: (p) => progress(p), get subscriptions() { return subscriptions; }, get opens() { return opens; } };
 }

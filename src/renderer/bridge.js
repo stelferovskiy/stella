@@ -42,7 +42,7 @@
       if (!done) break;
       removeLane(done.id);
     }
-    const lane = { id, agent, title: title || 'Задача', kind: kind || 'chat', state: 'thinking', started: Date.now(), ended: 0,
+    const lane = { id, agent, title: title || L('bridge.task'), kind: kind || 'chat', state: 'thinking', started: Date.now(), ended: 0,
       view: 'live', stage: { mode: 'idle' }, text: '', thinking: '', steps: [], preview: null, previewNonce: 0, previewFresh: false, pinned: null, dirty: true };
     lane.el = buildLaneEl(lane);
     $('lanes').append(lane.el);
@@ -77,11 +77,11 @@
       '<div class="lane-head"><canvas class="lane-orb" aria-hidden="true"></canvas>' +
       '<div class="lane-id"><div class="lane-name"></div><div class="lane-sub"><span class="lane-state"></span><span class="lane-time"></span></div><div class="lane-title"></div></div>' +
       '<div class="lane-acts">' +
-      (lane.kind === 'chat' ? '<button type="button" class="icon-btn ghost lane-x" data-a="stop" aria-label="Остановить агента" title="Остановить"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button><button type="button" class="icon-btn ghost lane-x" data-a="open" aria-label="Открыть чат" title="Открыть чат"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></button>' : '') +
-      '<button type="button" class="icon-btn ghost lane-x" data-a="close" aria-label="Убрать дорожку">×</button></div></div>' +
-      '<div class="lane-tabs" role="tablist"><button type="button" role="tab" data-v="live" class="on">Живое</button><button type="button" role="tab" data-v="preview" hidden>Превью</button></div>' +
+      (lane.kind === 'chat' ? '<button type="button" class="icon-btn ghost lane-x" data-a="stop" aria-label="' + esc(L('bridge.stopAgent')) + '" title="' + esc(L('common.stop')) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button><button type="button" class="icon-btn ghost lane-x" data-a="open" aria-label="' + esc(L('bridge.openChat')) + '" title="' + esc(L('bridge.openChat')) + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></button>' : '') +
+      '<button type="button" class="icon-btn ghost lane-x" data-a="close" aria-label="' + esc(L('bridge.removeLane')) + '">×</button></div></div>' +
+      '<div class="lane-tabs" role="tablist"><button type="button" role="tab" data-v="live" class="on">' + esc(L('bridge.live')) + '</button><button type="button" role="tab" data-v="preview" hidden>' + esc(L('bridge.preview')) + '</button></div>' +
       '<div class="lane-stage"></div>' +
-      '<svg class="lane-stars" aria-label="Шаги агента"></svg>';
+      '<svg class="lane-stars" aria-label="' + esc(L('bridge.steps')) + '"></svg>';
     el.querySelector('.lane-name').textContent = a.name;
     el.querySelector('.lane-title').textContent = lane.title;
     el.addEventListener('click', (e) => {
@@ -105,8 +105,8 @@
   }
 
   /* ---------- рендер ---------- */
-  const STATE = { thinking: 'ДУМАЕТ', streaming: 'ПИШЕТ ОТВЕТ', tool: 'РАБОТАЕТ', waiting: 'ЖДЁТ ПОДТВЕРЖДЕНИЯ', error: 'ОШИБКА', idle: 'ГОТОВО', done: 'ГОТОВО', generating: 'СИНТЕЗ', stopped: 'ОСТАНОВЛЕН' };
-  function fmtTime(ms) { const s = Math.max(0, Math.round(ms / 1000)); return (s >= 60 ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : s + ' с'); }
+  const STATE = { thinking: L('state.thinking'), streaming: L('state.streaming'), tool: L('sys.running'), waiting: L('state.waiting'), error: L('state.error'), idle: L('toolState.done'), done: L('toolState.done'), generating: L('bridge.synth'), stopped: L('bridge.stopped') };
+  function fmtTime(ms) { const s = Math.max(0, Math.round(ms / 1000)); return (s >= 60 ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : L('bridge.seconds', { s })); }
 
   function renderHead(lane) {
     const h = lane.el;
@@ -131,7 +131,7 @@
     const all = lane.steps;
     const shown = all.slice(-18);
     const off = all.length - shown.length;
-    if (!shown.length) { svg.innerHTML = '<text x="12" y="27" class="st-empty">шаги агента появятся здесь</text>'; return; }
+    if (!shown.length) { svg.innerHTML = '<text x="12" y="27" class="st-empty">' + esc(L('bridge.stepsEmpty')) + '</text>'; return; }
     const pts = shown.map((s, i) => [14 + (shown.length === 1 ? 0 : i * (W - 28) / Math.max(shown.length - 1, 1)), 23 + Math.sin((i + off) * 1.7) * 11]);
     let html = '';
     for (let i = 1; i < pts.length; i++) html += '<line x1="' + pts[i - 1][0] + '" y1="' + pts[i - 1][1] + '" x2="' + pts[i][0] + '" y2="' + pts[i][1] + '" class="st-line"/>';
@@ -144,7 +144,7 @@
 
   function codeHtml(st, lane) {
     const ext = extOf(st.path);
-    const kind = st.tool === 'Write' ? 'СОЗДАЁТ' : st.tool === 'Edit' ? 'ПРАВИТ' : 'ИЗМЕНИЛ';
+    const kind = st.tool === 'Write' ? L('bridge.creating') : st.tool === 'Edit' ? L('bridge.editing') : L('bridge.edited');
     const name = st.path ? A.base(st.path) : '…';
     let body = '';
     let text = st.text || '';
@@ -173,7 +173,7 @@
     let ln = '';
     for (let i = 1; i <= lines; i++) ln += i + '\n';
     const count = text.length;
-    return '<div class="code-tab"><span class="ct-kind">' + kind + '</span><b>' + esc(name) + '</b><small>' + esc(st.path || '') + '</small><span class="ct-count">' + count + ' симв.</span></div>' +
+    return '<div class="code-tab"><span class="ct-kind">' + kind + '</span><b>' + esc(name) + '</b><small>' + esc(st.path || '') + '</small><span class="ct-count">' + esc(L('bridge.chars', { n: count })) + '</span></div>' +
       '<div class="code-view"><pre class="ln" aria-hidden="true">' + ln + '</pre><pre class="src">' + body + '</pre></div>';
   }
 
@@ -189,7 +189,7 @@
       if (!fr || fr.dataset.src !== want) {
         box.innerHTML = '';
         if (isImg) { fr = document.createElement('img'); fr.className = 'pv-img'; }
-        else { fr = document.createElement('iframe'); fr.setAttribute('sandbox', 'allow-scripts allow-forms'); fr.title = 'Превью'; }
+        else { fr = document.createElement('iframe'); fr.setAttribute('sandbox', 'allow-scripts allow-forms'); fr.title = L('bridge.preview'); }
         fr.dataset.src = want;
         fr.src = want;
         box.append(fr);
@@ -201,14 +201,14 @@
     let html = '';
     if (lane.pinned) {
       const s = lane.pinned;
-      html = '<div class="step-view"><div class="sv-head"><span class="sv-st ' + s.status + '"></span><b>' + esc(s.title) + '</b><button type="button" class="mini-btn" data-back>Вернуться к живому</button></div>' +
-        (s.detail ? '<pre>' + esc(s.detail) + '</pre>' : '') + (s.output ? '<pre class="sv-out">' + esc(s.output) + '</pre>' : '') + (!s.detail && !s.output ? '<div class="muted-note">Подробностей нет.</div>' : '') + '</div>';
+      html = '<div class="step-view"><div class="sv-head"><span class="sv-st ' + s.status + '"></span><b>' + esc(s.title) + '</b><button type="button" class="mini-btn" data-back>' + esc(L('bridge.backToLive')) + '</button></div>' +
+        (s.detail ? '<pre>' + esc(s.detail) + '</pre>' : '') + (s.output ? '<pre class="sv-out">' + esc(s.output) + '</pre>' : '') + (!s.detail && !s.output ? '<div class="muted-note">' + esc(L('msg.noDetails')) + '</div>' : '') + '</div>';
     } else {
       const st = lane.stage;
       if (st.mode === 'code') html = codeHtml(st, lane);
       else if (st.mode === 'cmd') {
         html = '<div class="term-view"><div class="tv-cmd"><span>❯</span>' + esc(st.command) + (st.done ? '' : '<span class="caret"></span>') + '</div><pre class="tv-out">' + esc(st.output || (st.done ? '' : '…')) + '</pre>' +
-          (st.done && st.exitCode != null ? '<div class="tv-exit ' + (st.exitCode === 0 ? 'ok' : 'bad') + '">код выхода ' + st.exitCode + '</div>' : '') + '</div>';
+          (st.done && st.exitCode != null ? '<div class="tv-exit ' + (st.exitCode === 0 ? 'ok' : 'bad') + '">' + esc(L('bridge.exitCode', { code: st.exitCode })) + '</div>' : '') + '</div>';
       } else if (st.mode === 'image-pending') {
         if (!box.querySelector('.img-pending')) {
           box.innerHTML = '<div class="img-pending"><canvas aria-hidden="true"></canvas><div class="ip-t"></div><div class="ip-p"></div></div>';
@@ -216,19 +216,19 @@
           lane.stageOrb.setState('thinking');
           box.querySelector('.ip-p').textContent = lane.title;
         }
-        box.querySelector('.ip-t').textContent = 'СИНТЕЗ ИЗОБРАЖЕНИЯ · ' + fmtTime(Date.now() - lane.started);
+        box.querySelector('.ip-t').textContent = L('bridge.imageSynth', { time: fmtTime(Date.now() - lane.started) });
         return;
       } else if (st.mode === 'image') {
         if (!box.querySelector('.img-done')) box.innerHTML = '<div class="img-done"><img alt="" src="' + esc(A.fileUrl(st.file)) + '"></div>';
         return;
       } else if (st.mode === 'image-error') {
-        html = '<div class="stage-note err">' + esc(st.error) + (st.setup ? '<div><button type="button" class="btn accent" data-studio>Открыть студию</button></div>' : '') + '</div>';
+        html = '<div class="stage-note err">' + esc(st.error) + (st.setup ? '<div><button type="button" class="btn accent" data-studio>' + esc(L('bridge.openStudio')) + '</button></div>' : '') + '</div>';
       } else {
         const t = lane.text || '';
         const th = lane.thinking || '';
-        if (t) html = '<div class="think' + (lane.state === 'error' ? ' err' : '') + '"><div class="th-label">' + (lane.state === 'error' ? 'ОШИБКА' : 'ОТВЕТ') + '</div><div class="th-text">' + esc(t.slice(-2500)) + (lane.ended ? '' : '<span class="caret"></span>') + '</div></div>';
-        else if (th) html = '<div class="think dim"><div class="th-label">РАЗМЫШЛЯЕТ</div><div class="th-text">' + esc(th.slice(-2000)) + '<span class="caret"></span></div></div>';
-        else html = '<div class="stage-note">' + (lane.ended ? 'Готово.' : 'Агент собирается с мыслями…') + '</div>';
+        if (t) html = '<div class="think' + (lane.state === 'error' ? ' err' : '') + '"><div class="th-label">' + (lane.state === 'error' ? L('state.error') : L('bridge.reply')) + '</div><div class="th-text">' + esc(t.slice(-2500)) + (lane.ended ? '' : '<span class="caret"></span>') + '</div></div>';
+        else if (th) html = '<div class="think dim"><div class="th-label">' + esc(L('bridge.thinking')) + '</div><div class="th-text">' + esc(th.slice(-2000)) + '<span class="caret"></span></div></div>';
+        else html = '<div class="stage-note">' + esc(lane.ended ? L('plugins.done') : L('bridge.gathering')) + '</div>';
       }
     }
     box.innerHTML = html;
@@ -301,11 +301,11 @@
         if (s) { s.status = ev.isError ? 'error' : 'done'; s.output = ev.output || ''; }
         break;
       }
-      case 'approval': l.steps.push({ key: ev.reqId, name: 'approval', title: 'Ждёт подтверждения: ' + ev.title, detail: ev.detail, output: '', status: 'running' }); break;
+      case 'approval': l.steps.push({ key: ev.reqId, name: 'approval', title: L('bridge.waitingApproval', { title: ev.title }), detail: ev.detail, output: '', status: 'running' }); break;
       case 'approval-resolved': { const s = l.steps.find((x) => x.key === ev.reqId); if (s) s.status = ev.status === 'denied' ? 'error' : 'done'; break; }
-      case 'user-input': l.steps.push({ key: ev.reqId, name: 'question', title: 'Вопрос пользователю', detail: (ev.questions || []).map((q) => q.question).join('\n'), output: '', status: 'running' }); break;
+      case 'user-input': l.steps.push({ key: ev.reqId, name: 'question', title: L('bridge.question'), detail: (ev.questions || []).map((q) => q.question).join('\n'), output: '', status: 'running' }); break;
       case 'user-input-resolved': { const s = l.steps.find((x) => x.key === ev.reqId); if (s) s.status = ev.status === 'expired' ? 'error' : 'done'; break; }
-      case 'error': l.steps.push({ key: 'err' + Date.now(), name: 'error', title: 'Ошибка', detail: ev.text, output: '', status: 'error' }); l.stage = { mode: 'think' }; if (!l.text) l.text = ev.text; break;
+      case 'error': l.steps.push({ key: 'err' + Date.now(), name: 'error', title: L('common.error'), detail: ev.text, output: '', status: 'error' }); l.stage = { mode: 'think' }; if (!l.text) l.text = ev.text; break;
       case 'done': for (const s of l.steps) if (s.status === 'running') s.status = ev.status === 'done' ? 'done' : 'error'; break;
       default: break;
     }
@@ -372,16 +372,16 @@
     const l = makeLane(id, 'images', prompt, 'studio');
     l.state = 'generating';
     if (!A.cfReady()) {
-      l.stage = { mode: 'image-error', error: 'Студия не подключена: нужен бесплатный аккаунт Cloudflare.', setup: true };
+      l.stage = { mode: 'image-error', error: L('bridge.studioNotConnected'), setup: true };
       l.state = 'error'; l.ended = Date.now(); l.dirty = true;
       return;
     }
     l.stage = { mode: 'image-pending' };
-    l.steps.push({ key: 'g', name: 'gen', title: 'Генерация FLUX', detail: prompt, output: '', status: 'running' });
+    l.steps.push({ key: 'g', name: 'gen', title: L('bridge.fluxGeneration'), detail: prompt, output: '', status: 'running' });
     l.dirty = true;
     const r = await api.imagesGenerate({ prompt, model: 'schnell', width: 1024, height: 1024, steps: 4, enhance: true });
     l.steps[0].status = r.ok ? 'done' : 'error';
-    if (r.ok) { l.stage = { mode: 'image', file: r.item.file }; l.state = 'done'; if (r.item.usedPrompt !== prompt) l.steps[0].output = 'Запрос для модели: ' + r.item.usedPrompt; }
+    if (r.ok) { l.stage = { mode: 'image', file: r.item.file }; l.state = 'done'; if (r.item.usedPrompt !== prompt) l.steps[0].output = L('bridge.modelPrompt', { prompt: r.item.usedPrompt }); }
     else { l.stage = { mode: 'image-error', error: r.error, setup: r.code === 'nocreds' }; l.state = 'error'; }
     l.ended = Date.now();
     l.dirty = true;
@@ -393,7 +393,7 @@
     const t = $('bridgeInput').value.trim();
     const targets = chips();
     if (!t) { $('bridgeInput').focus(); return; }
-    if (!targets.length) { A.toast('Отметьте хотя бы одного агента.'); return; }
+    if (!targets.length) { A.toast(L('bridge.selectAgent')); return; }
     $('bridgeInput').value = '';
     $('bridgeInput').style.height = '';
     launch(t, targets);

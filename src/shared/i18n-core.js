@@ -12,7 +12,8 @@
   }
   function createTranslator(dicts, getLang) {
     const rules = {};
-    return function L(key, params) {
+    const has = (key) => (dicts[getLang()] && dicts[getLang()][key] != null) || (dicts[FALLBACK] && dicts[FALLBACK][key] != null);
+    function L(key, params) {
       const lang = getLang();
       let v = dicts[lang] && dicts[lang][key];
       if (v == null && dicts[FALLBACK]) v = dicts[FALLBACK][key];
@@ -22,7 +23,9 @@
         v = v[pr.select(Number(params && params.n) || 0)] ?? v.other ?? v.many ?? '';
       }
       return format(v, params);
-    };
+    }
+    L.has = has;
+    return L;
   }
   return { createTranslator, format };
 });

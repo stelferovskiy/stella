@@ -13,9 +13,9 @@
   <header class="top">
     <div class="brand">
       <div class="logo">STELLA <span id="appVersion">/ v2</span></div>
-      <div class="sub">ТВОЙ КОМАНДНЫЙ ЦЕНТР</div>
+      <div class="sub" data-i18n="app.tagline"></div>
     </div>
-    <nav class="tabs" aria-label="Агент">
+    <nav class="tabs" data-i18n-aria="composer.agent">
       <button type="button" class="tab" data-agent="claude">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 19"/></svg>Claude</button>
       <button type="button" class="tab" data-agent="codex">
@@ -24,12 +24,12 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M8.5 10.5h7M8.5 14h4.5"/></svg>ChatGPT</button>
       <button type="button" class="tab" data-agent="gpt-images"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 16 5-5 5 5 3-3 5 5M16 7v4M14 9h4"/></svg>GPT Images</button>
       <button type="button" class="tab" data-agent="images">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>Студия</button>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg><span data-i18n="studio.tab"></span></button>
     </nav>
     <div class="top-right">
-      <button type="button" id="bridgeToggle" class="bridge-btn" title="Мостик — живая работа агентов (Ctrl+B)">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="5" cy="17" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="19" cy="14" r="2"/><path d="M6.5 15.5l4-6.5M13.6 8.3l4 4.5"/></svg>Мостик</button>
-      <button type="button" id="hudToggle" class="icon-btn ghost" aria-label="Показать или скрыть панель системы" title="Панель системы">
+      <button type="button" id="bridgeToggle" class="bridge-btn" data-i18n-title="bridge.toggleTitle">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="5" cy="17" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="19" cy="14" r="2"/><path d="M6.5 15.5l4-6.5M13.6 8.3l4 4.5"/></svg><span data-i18n="bridge.tab"></span></button>
+      <button type="button" id="hudToggle" class="icon-btn ghost" data-i18n-aria="hud.toggle" data-i18n-title="hud.title">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
       </button>
       <div class="clockbox"><div id="clock" class="clock">00:00</div><div id="date" class="date"></div></div>
@@ -37,27 +37,27 @@
   </header>
 
   <div class="body">
-    <aside class="side" aria-label="Чаты">
-      <div class="side-label">ПРОЕКТ</div>
+    <aside class="side" data-i18n-aria="side.chats">
+      <div class="side-label" data-i18n="side.project"></div>
       <div class="proj">
         <button type="button" id="projBtn" class="proj-btn" aria-haspopup="true" aria-expanded="false">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-          <span class="proj-text"><b id="projName">Папка</b><small id="projPath"></small></span>
+          <span class="proj-text"><b id="projName" data-i18n="side.folder"></b><small id="projPath"></small></span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div id="projMenu" class="menu" hidden></div>
       </div>
       <button type="button" id="newChat" class="btn-primary">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Новый чат <kbd>Ctrl N</kbd></button>
-      <label class="sr" for="search">Поиск по чатам</label>
-      <input id="search" class="search" placeholder="Поиск по чатам…  Ctrl K" autocomplete="off">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="chat.new"></span> <kbd>Ctrl N</kbd></button>
+      <label class="sr" for="search" data-i18n="side.search"></label>
+      <input id="search" class="search" data-i18n-placeholder="side.searchPlaceholder" autocomplete="off">
       <div id="chatList" class="chat-list"></div>
       <div class="side-foot">
-        <button type="button" class="foot-btn" id="openTasks"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Расписание</button>
-        <button type="button" class="foot-btn" id="openDock"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>Терминал</button>
-        <button type="button" class="foot-btn" id="openPlugins"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 3v4M15 3v4M7 7h10v5a5 5 0 0 1-10 0z"/><path d="M12 17v4"/></svg>Плагины</button>
-        <button type="button" class="foot-btn" id="openSettings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</button>
-        <button type="button" class="foot-btn" id="checkUpdateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Проверить обновления</button>
+        <button type="button" class="foot-btn" id="openTasks"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span data-i18n="tasks.title"></span></button>
+        <button type="button" class="foot-btn" id="openDock"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg><span data-i18n="term.button"></span></button>
+        <button type="button" class="foot-btn" id="openPlugins"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 3v4M15 3v4M7 7h10v5a5 5 0 0 1-10 0z"/><path d="M12 17v4"/></svg><span data-i18n="plugins.title"></span></button>
+        <button type="button" class="foot-btn" id="openSettings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span data-i18n="settings.title"></span></button>
+        <button type="button" class="foot-btn" id="checkUpdateBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg><span data-i18n="update.check"></span></button>
       </div>
     </aside>
 
@@ -65,31 +65,31 @@
       <section id="hero" class="hero">
         <div class="orb-big"><canvas id="orbBig" aria-hidden="true"></canvas></div>
         <div id="heroName" class="hero-name">CLAUDE</div>
-        <div id="heroSub" class="hero-sub">ЯДРО STELLA · CLAUDE CODE</div>
-        <div id="skills" class="skills" aria-label="Навыки"></div>
+        <div id="heroSub" class="hero-sub"></div>
+        <div id="skills" class="skills" data-i18n-aria="skills.title"></div>
       </section>
 
       <section id="chatView" class="chat-view" hidden>
         <div class="chat-head">
           <canvas id="orbMini" class="orb-mini" aria-hidden="true"></canvas>
           <div class="chat-head-text">
-            <div id="chatTitle" class="chat-title" title="Нажмите, чтобы переименовать"></div>
+            <div id="chatTitle" class="chat-title" data-i18n-title="chat.renameHint"></div>
             <div class="chat-meta"><span id="chatAgent" class="agent-pill"></span><span id="chatCwd" class="chat-cwd"></span></div>
           </div>
-          <button type="button" id="transferBtn" class="btn" title="Сжать итоги этого чата и продолжить в новой сессии с меньшим расходом токенов">Перенести в новую сессию</button>
+          <button type="button" id="transferBtn" class="btn" data-i18n-title="chat.transferHint" data-i18n="chat.transfer"></button>
           <div id="chatState" class="chat-state" role="status"></div>
         </div>
         <div id="messages" class="messages" aria-live="polite"></div>
       </section>
 
-      <section id="studio" class="studio" hidden aria-label="Студия изображений">
+      <section id="studio" class="studio" hidden data-i18n-aria="studio.aria">
         <div class="studio-top">
           <div class="studio-orb"><canvas id="orbStudio" aria-hidden="true"></canvas></div>
           <div class="studio-head">
-            <div class="studio-title">СТУДИЯ</div>
-            <div class="studio-sub">FLUX · CLOUDFLARE WORKERS AI · БЕСПЛАТНО С ДНЕВНЫМ ЛИМИТОМ</div>
+            <div class="studio-title" data-i18n="studio.title"></div>
+            <div class="studio-sub" data-i18n="studio.sub"></div>
             <div class="budget">
-              <div class="limit-head"><span>ЛИМИТ НА СЕГОДНЯ</span><b id="budgetVal">—</b></div>
+              <div class="limit-head"><span data-i18n="studio.todayLimit"></span><b id="budgetVal">—</b></div>
               <div class="bar"><div id="budgetBar"></div></div>
               <div class="limit-foot" id="budgetFoot"></div>
             </div>
@@ -97,22 +97,22 @@
         </div>
         <div id="cfSetup" class="cf-setup" hidden></div>
         <form id="genForm" class="gen-form" autocomplete="off">
-          <label class="sr" for="genPrompt">Описание картинки</label>
-          <textarea id="genPrompt" rows="3" placeholder="Опишите картинку: например, неоновый город ночью под дождём, вид сверху, кинематографичный свет"></textarea>
+          <label class="sr" for="genPrompt" data-i18n="studio.promptLabel"></label>
+          <textarea id="genPrompt" rows="3" data-i18n-placeholder="studio.promptPlaceholder"></textarea>
           <div class="gen-bar">
-            <label class="sr" for="genModel">Модель</label>
-            <select id="genModel"><option value="schnell">FLUX.1 schnell — быстрая</option><option value="klein">FLUX.2 klein — качественнее</option></select>
-            <label class="sr" for="genSize">Размер</label>
+            <label class="sr" for="genModel" data-i18n="composer.model"></label>
+            <select id="genModel"><option value="schnell" data-i18n="studio.model.schnell"></option><option value="klein" data-i18n="studio.model.klein"></option></select>
+            <label class="sr" for="genSize" data-i18n="studio.size"></label>
             <select id="genSize"></select>
-            <label class="sr" for="genSteps">Шаги</label>
-            <select id="genSteps"><option value="4">4 шага</option><option value="6">6 шагов</option><option value="8">8 шагов</option></select>
-            <label class="sr" for="genCount">Количество</label>
-            <select id="genCount"><option value="1">1 картинка</option><option value="2">2 варианта</option><option value="4">4 варианта</option></select>
+            <label class="sr" for="genSteps" data-i18n="studio.steps"></label>
+            <select id="genSteps"><option value="4" data-i18n="studio.steps4"></option><option value="6" data-i18n="studio.steps6"></option><option value="8" data-i18n="studio.steps8"></option></select>
+            <label class="sr" for="genCount" data-i18n="studio.count"></label>
+            <select id="genCount"><option value="1" data-i18n="studio.count1"></option><option value="2" data-i18n="studio.count2"></option><option value="4" data-i18n="studio.count4"></option></select>
             <label class="sr" for="genSeed">Seed</label>
-            <input id="genSeed" class="input seed" placeholder="seed (случайный)" inputmode="numeric">
-            <label class="check small"><input type="checkbox" id="genEnhance" checked> Перевести запрос на английский</label>
+            <input id="genSeed" class="input seed" data-i18n-placeholder="studio.seed" inputmode="numeric">
+            <label class="check small"><input type="checkbox" id="genEnhance" checked> <span data-i18n="studio.enhance"></span></label>
             <span id="genCost" class="gen-cost"></span>
-            <button type="submit" id="genBtn" class="gen-btn">Создать</button>
+            <button type="submit" id="genBtn" class="gen-btn" data-i18n="studio.create"></button>
           </div>
         </form>
         <div id="gallery" class="gallery"></div>
@@ -137,88 +137,88 @@
         <div id="gptImagesGallery" class="gpt-images-gallery"></div>
       </section>
 
-      <section id="bridge" class="bridge" hidden aria-label="Мостик">
+      <section id="bridge" class="bridge" hidden data-i18n-aria="bridge.tab">
         <form id="bridgeForm" class="bridge-form" autocomplete="off">
-          <label class="sr" for="bridgeInput">Задача для агентов</label>
-          <textarea id="bridgeInput" rows="1" placeholder="Задача для отмеченных агентов — например, сделай сайт-визитку в папке site"></textarea>
-          <div id="bridgeAgents" class="bf-agents" role="group" aria-label="Кому отправить">
+          <label class="sr" for="bridgeInput" data-i18n="bridge.taskLabel"></label>
+          <textarea id="bridgeInput" rows="1" data-i18n-placeholder="bridge.taskPlaceholder"></textarea>
+          <div id="bridgeAgents" class="bf-agents" role="group" data-i18n-aria="bridge.sendTo">
             <label class="bf-chip" style="--c:#E0875F"><input type="checkbox" value="claude" checked><span>Claude</span></label>
             <label class="bf-chip" style="--c:#5FB8C9"><input type="checkbox" value="codex"><span>Codex</span></label>
             <label class="bf-chip" style="--c:#6FD3A0"><input type="checkbox" value="chatgpt"><span>ChatGPT</span></label>
-            <label class="bf-chip" style="--c:#A98BFF"><input type="checkbox" value="images"><span>Студия</span></label>
+            <label class="bf-chip" style="--c:#A98BFF"><input type="checkbox" value="images"><span data-i18n="studio.tab"></span></label>
           </div>
-          <button type="submit" class="gen-btn">Запустить</button>
+          <button type="submit" class="gen-btn" data-i18n="bridge.run"></button>
         </form>
         <div id="lanes" class="lanes">
           <div id="bridgeEmpty" class="bridge-empty">
-            <div class="be-title">МОСТИК</div>
-            <p>Здесь видно, как агенты работают прямо сейчас: код печатается по символам, команды выводят результат, сайт собирается в превью, а каждый шаг загорается звездой на линии внизу.</p>
-            <p>Дайте задачу сразу нескольким агентам выше — или просто начните работу в любом чате: она появится здесь сама.</p>
+            <div class="be-title" data-i18n="bridge.title"></div>
+            <p data-i18n="bridge.empty1"></p>
+            <p data-i18n="bridge.empty2"></p>
           </div>
         </div>
       </section>
 
       <form id="composer" class="composer" autocomplete="off">
         <div id="attachRow" class="attach-row" hidden></div>
-        <label class="sr" for="input">Сообщение</label>
-        <textarea id="input" rows="1" placeholder="Спроси или дай задачу…"></textarea>
+        <label class="sr" for="input" data-i18n="composer.message"></label>
+        <textarea id="input" rows="1" data-i18n-placeholder="composer.placeholderTask"></textarea>
         <div class="composer-bar">
-          <button type="button" id="attachBtn" class="icon-btn ghost" aria-label="Прикрепить файлы" title="Прикрепить файлы">
+          <button type="button" id="attachBtn" class="icon-btn ghost" data-i18n-aria="dialog.attachFiles" data-i18n-title="dialog.attachFiles">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6l8.3-8.3"/></svg>
           </button>
-          <label class="sr" for="modeSelect">Режим</label>
+          <label class="sr" for="modeSelect" data-i18n="composer.mode"></label>
           <select id="modeSelect" class="mode-select"></select>
-          <label class="sr" for="modelSelect">Модель</label>
-          <select id="modelSelect" class="mode-select" title="Модель"></select>
-          <label class="sr" for="effortSelect">Уровень размышлений</label>
-          <select id="effortSelect" class="mode-select" title="Уровень размышлений"></select>
-          <span id="composerHint" class="composer-hint">Enter — отправить · Shift+Enter — новая строка</span>
-          <button type="submit" id="sendBtn" class="send-btn" aria-label="Отправить">
+          <label class="sr" for="modelSelect" data-i18n="composer.model"></label>
+          <select id="modelSelect" class="mode-select" data-i18n-title="composer.model"></select>
+          <label class="sr" for="effortSelect" data-i18n="composer.effort"></label>
+          <select id="effortSelect" class="mode-select" data-i18n-title="composer.effort"></select>
+          <span id="composerHint" class="composer-hint" data-i18n="composer.hint"></span>
+          <button type="submit" id="sendBtn" class="send-btn" data-i18n-aria="composer.send">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6"/></svg>
           </button>
-          <button type="button" id="stopBtn" class="stop-btn" aria-label="Остановить" hidden>
+          <button type="button" id="stopBtn" class="stop-btn" data-i18n-aria="common.stop" hidden>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
           </button>
         </div>
       </form>
     </main>
 
-    <aside class="hud" id="hud" aria-label="Панель системы">
-      <div class="hud-label">● СИСТЕМЫ</div>
+    <aside class="hud" id="hud" data-i18n-aria="hud.title">
+      <div class="hud-label" data-i18n="hud.systems"></div>
       <div id="sysList" class="sys-list"></div>
-      <div class="hud-label">● ЛИМИТЫ</div>
+      <div class="hud-label" data-i18n="hud.limits"></div>
       <div id="limits" class="card"></div>
-      <div class="hud-label">● РАСХОД ЗА НЕДЕЛЮ</div>
+      <div class="hud-label" data-i18n="hud.weekUsage"></div>
       <div id="weekUsage" class="usage-grid"></div>
-      <div class="hud-label">● ДИРЕКТИВЫ</div>
+      <div class="hud-label" data-i18n="hud.directives"></div>
       <ul id="directives" class="directives"></ul>
       <form id="dirForm" class="row">
-        <label for="dirInput" class="sr">Новая директива</label>
-        <input id="dirInput" class="input" placeholder="Новая директива…" autocomplete="off">
-        <button type="submit" class="icon-btn" aria-label="Добавить директиву">+</button>
+        <label for="dirInput" class="sr" data-i18n="directive.new"></label>
+        <input id="dirInput" class="input" data-i18n-placeholder="directive.newPlaceholder" autocomplete="off">
+        <button type="submit" class="icon-btn" data-i18n-aria="directive.add">+</button>
       </form>
-      <div class="hud-label">● ФАЙЛЫ ЧАТА</div>
+      <div class="hud-label" data-i18n="hud.chatFiles"></div>
       <div id="chatFiles" class="files"></div>
     </aside>
   </div>
 
-  <section class="dock" id="dock" hidden aria-label="Терминалы">
+  <section class="dock" id="dock" hidden data-i18n-aria="term.title">
     <div class="dock-bar">
-      <span class="dock-title">Терминалы</span>
+      <span class="dock-title" data-i18n="term.title"></span>
       <div id="termTabs" class="term-tabs"></div>
       <button type="button" id="newShell" class="btn">+ PowerShell</button>
-      <button type="button" id="closeDock" class="icon-btn ghost" aria-label="Скрыть терминалы">
+      <button type="button" id="closeDock" class="icon-btn ghost" data-i18n-aria="term.hide">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
     </div>
-    <div id="termHost" class="term-host"><div id="termEmpty" class="term-empty">Нет открытых терминалов.</div></div>
+    <div id="termHost" class="term-host"><div id="termEmpty" class="term-empty" data-i18n="term.empty"></div></div>
   </section>
 
-  <aside class="drawer" id="drawer" hidden aria-label="Предпросмотр">
+  <aside class="drawer" id="drawer" hidden data-i18n-aria="preview.title">
     <div class="drawer-bar">
       <div class="drawer-title"><b id="drawerName"></b><small id="drawerPath"></small></div>
-      <button type="button" id="drawerOpen" class="btn">Открыть</button>
-      <button type="button" id="drawerReveal" class="btn">Показать в папке</button>
-      <button type="button" id="drawerClose" class="icon-btn ghost" aria-label="Закрыть предпросмотр">
+      <button type="button" id="drawerOpen" class="btn" data-i18n="common.open"></button>
+      <button type="button" id="drawerReveal" class="btn" data-i18n="common.reveal"></button>
+      <button type="button" id="drawerClose" class="icon-btn ghost" data-i18n-aria="preview.close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div id="drawerBody" class="drawer-body"></div>
@@ -226,27 +226,28 @@
 
   <div class="modal" id="settingsModal" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="modal-box">
-      <div class="modal-head"><h2 id="settingsTitle">Настройки</h2>
-        <button type="button" class="icon-btn ghost" data-close aria-label="Закрыть"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-head"><h2 id="settingsTitle" data-i18n="settings.title"></h2>
+        <button type="button" class="icon-btn ghost" data-close data-i18n-aria="common.close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <div class="modal-body" id="settingsBody"></div>
     </div>
   </div>
 
   <div class="modal" id="tasksModal" hidden role="dialog" aria-modal="true" aria-labelledby="tasksTitle">
     <div class="modal-box">
-      <div class="modal-head"><h2 id="tasksTitle">Расписание</h2>
-        <button type="button" class="icon-btn ghost" data-close aria-label="Закрыть"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-head"><h2 id="tasksTitle" data-i18n="tasks.title"></h2>
+        <button type="button" class="icon-btn ghost" data-close data-i18n-aria="common.close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <div class="modal-body" id="tasksBody"></div>
     </div>
   </div>
 
-  <div id="dropOverlay" class="drop-overlay" hidden><div>Отпустите файлы, чтобы прикрепить</div></div>
+  <div id="dropOverlay" class="drop-overlay" hidden><div data-i18n="composer.drop"></div></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 </div>
 
 <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script src="../shared/reducer.js"></script>
+<script src="../shared/i18n-core.js"></script>
 <script src="i18n.js"></script>
 <script src="md.js"></script>
 <script src="orb.js"></script>

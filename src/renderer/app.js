@@ -7,16 +7,16 @@
   const esc = MD.esc;
 
   const AGENTS = {
-    claude: { name: 'CLAUDE', label: 'Claude', sub: 'ЯДРО STELLA · CLAUDE CODE', color: '#E0875F', rgb: '224,135,95', glow: '#2A1620' },
-    codex: { name: 'CODEX', label: 'Codex', sub: 'ЯДРО STELLA · OPENAI CODEX', color: '#5FB8C9', rgb: '95,184,201', glow: '#0E2329' },
-    chatgpt: { name: 'CHATGPT', label: 'ChatGPT', sub: 'ЯДРО STELLA · ЧАТ-АССИСТЕНТ', color: '#6FD3A0', rgb: '111,211,160', glow: '#0F241A' },
-    images: { name: 'СТУДИЯ', label: 'Студия', sub: 'FLUX · CLOUDFLARE', color: '#A98BFF', rgb: '169,139,255', glow: '#1A1430' }
+    claude: { name: 'CLAUDE', label: 'Claude', sub: L('agent.claude.sub'), color: '#E0875F', rgb: '224,135,95', glow: '#2A1620' },
+    codex: { name: 'CODEX', label: 'Codex', sub: L('agent.codex.sub'), color: '#5FB8C9', rgb: '95,184,201', glow: '#0E2329' },
+    chatgpt: { name: 'CHATGPT', label: 'ChatGPT', sub: L('agent.chatgpt.sub'), color: '#6FD3A0', rgb: '111,211,160', glow: '#0F241A' },
+    images: { name: L('studio.title'), label: L('studio.tab'), sub: 'FLUX · CLOUDFLARE', color: '#A98BFF', rgb: '169,139,255', glow: '#1A1430' }
   };
   const MODES = {
-    claude: [['default', 'Спрашивать разрешение'], ['acceptEdits', 'Сам правит файлы'], ['plan', 'Только план'], ['bypassPermissions', 'Полный доступ']],
-    codex: [['read-only', 'Только чтение'], ['workspace-write', 'Правит в папке проекта'], ['danger-full-access', 'Полный доступ']]
+    claude: [['default', L('mode.claude.default')], ['acceptEdits', L('mode.claude.acceptEdits')], ['plan', L('mode.claude.plan')], ['bypassPermissions', L('mode.fullAccess')]],
+    codex: [['read-only', L('mode.codex.readOnly')], ['workspace-write', L('mode.codex.workspaceWrite')], ['danger-full-access', L('mode.fullAccess')]]
   };
-  const STATE_LABEL = { thinking: 'ДУМАЕТ', streaming: 'ПИШЕТ ОТВЕТ', tool: 'РАБОТАЕТ С ИНСТРУМЕНТАМИ', waiting: 'ЖДЁТ ПОДТВЕРЖДЕНИЯ', error: 'ОШИБКА', idle: '' };
+  const STATE_LABEL = { thinking: L('state.thinking'), streaming: L('state.streaming'), tool: L('state.tool'), waiting: L('state.waiting'), error: L('state.error'), idle: '' };
 
   const init = await api.init();
   // Язык интерфейса: из настроек; при смене — запоминаем и перезагружаем окно, чтобы перевести всё сразу.
@@ -101,7 +101,7 @@
     if (orbStudio) orbStudio.setColor(AGENTS.images.color);
     $('heroName').textContent = a.name;
     $('heroSub').textContent = a.sub;
-    $('input').placeholder = isApiChat(viewAgent()) ? 'Спроси что угодно…' : 'Спроси или дай задачу для папки проекта…';
+    $('input').placeholder = isApiChat(viewAgent()) ? L('composer.placeholderChat') : L('composer.placeholderProject');
     renderModeSelect();
     renderModelSelects();
     renderLimits();
@@ -112,7 +112,7 @@
     sel.textContent = '';
     if (agent === 'chatgpt' && S.settings.chatgpt.backend === 'api') {
       const o = document.createElement('option');
-      o.textContent = S.settings.chatgpt.backend === 'api' ? 'Через API-ключ' : 'Через аккаунт ChatGPT';
+      o.textContent = S.settings.chatgpt.backend === 'api' ? L('mode.viaApiKey') : L('mode.viaAccount');
       sel.append(o);
       sel.disabled = true;
       return;
@@ -129,18 +129,20 @@
     const v = e.target.value;
     if (viewAgent() === 'claude') await saveSettings({ claude: Object.assign({}, S.settings.claude, { permissionMode: v }) });
     else { const a = viewAgent(); await saveSettings({ [a]: Object.assign({}, S.settings[a], { sandbox: v }) }); }
-    if (v === 'bypassPermissions' || v === 'danger-full-access') toast('Полный доступ: агент будет выполнять любые действия без подтверждения.', 5000);
+    if (v === 'bypassPermissions' || v === 'danger-full-access') toast(L('mode.fullAccessWarning'), 5000);
   });
 
   /* ---------- модель и уровень размышлений ---------- */
-  const EFFORT_OFF = ['', 'Размышление: авто'];
+  const EFFORT_OFF = ['', L('effort.auto')];
+  const MODEL_AUTO = ['', L('model.auto')];
+  const effort = (v) => [v, L('effort.' + v)];
   const MODEL_LISTS = {
-    claude: { models: [['', 'Модель: авто'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku'], ['opusplan', 'Opus (план) + Sonnet']],
-      efforts: [EFFORT_OFF, ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое'], ['xhigh', 'Очень высокое'], ['max', 'Максимум']] },
-    codex: { models: [['', 'Модель: авто'], ['gpt-5-codex', 'GPT-5 Codex'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini']],
-      efforts: [EFFORT_OFF, ['minimal', 'Минимальное'], ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']] },
-    chatgpt: { models: [['', 'Модель: авто'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini'], ['gpt-4.1', 'GPT-4.1']],
-      efforts: [EFFORT_OFF, ['minimal', 'Минимальное'], ['low', 'Низкое'], ['medium', 'Среднее'], ['high', 'Высокое']] }
+    claude: { models: [MODEL_AUTO, ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku'], ['opusplan', L('model.opusplan')]],
+      efforts: [EFFORT_OFF, effort('low'), effort('medium'), effort('high'), effort('xhigh'), effort('max')] },
+    codex: { models: [MODEL_AUTO, ['gpt-5-codex', 'GPT-5 Codex'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini']],
+      efforts: [EFFORT_OFF, effort('minimal'), effort('low'), effort('medium'), effort('high')] },
+    chatgpt: { models: [MODEL_AUTO, ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini'], ['gpt-4.1', 'GPT-4.1']],
+      efforts: [EFFORT_OFF, effort('minimal'), effort('low'), effort('medium'), effort('high')] }
   };
   function modelKey(agent) { return agent === 'chatgpt' && S.settings.chatgpt.backend === 'api' ? 'apiModel' : 'model'; }
   function fillSelect(sel, list, cur) {
@@ -161,24 +163,24 @@
     if (request !== catalogRequest) return;
     if (results[0].status === 'fulfilled' && Array.isArray(results[0].value)) {
       codexCatalog = results[0].value; catalogError = '';
-    } else { codexCatalog = null; catalogError = 'Каталог моделей недоступен'; }
+    } else { codexCatalog = null; catalogError = L('model.catalogUnavailable'); }
     codexAccount = results[1].status === 'fulfilled' ? Object.assign({ at: Date.now() }, results[1].value) : null;
     renderModelSelects(); renderSys(); renderLimits();
   }
   function renderModelSelects() {
     const agent = viewAgent();
-    const L = MODEL_LISTS[agent];
-    if (!L) return;
+    const ML = MODEL_LISTS[agent];
+    if (!ML) return;
     const cfg = S.settings[agent] || {};
     const selected = cfg[modelKey(agent)] || '';
     const dynamic = usesCodex(agent);
     const catalog = codexCatalog || [];
-    const models = dynamic ? [['', 'Модель: авто']].concat(catalog.map((m) => [m.model || m.id, m.displayName || m.model || m.id])) : L.models;
+    const models = dynamic ? [MODEL_AUTO].concat(catalog.map((m) => [m.model || m.id, m.displayName || m.model || m.id])) : ML.models;
     const model = selected ? catalog.find((m) => (m.model || m.id) === selected) : catalog.find((m) => m.isDefault) || catalog[0];
-    const efforts = dynamic ? [EFFORT_OFF].concat((model && model.supportedReasoningEfforts || []).map((e) => [e.reasoningEffort, e.reasoningEffort])) : L.efforts;
+    const efforts = dynamic ? [EFFORT_OFF].concat((model && model.supportedReasoningEfforts || []).map((e) => [e.reasoningEffort, L.has('effort.' + e.reasoningEffort) ? L('effort.' + e.reasoningEffort) : e.reasoningEffort])) : ML.efforts;
     fillSelect($('modelSelect'), models, selected);
     fillSelect($('effortSelect'), efforts, cfg.effort || '');
-    $('effortSelect').title = model && model.defaultReasoningEffort ? 'Auto: ' + model.defaultReasoningEffort : '';
+    $('effortSelect').title = model && model.defaultReasoningEffort ? L('effort.autoDefault', { effort: model.defaultReasoningEffort }) : '';
     let warning = $('codexModelWarning');
     if (!warning) {
       warning = document.createElement('div'); warning.id = 'codexModelWarning'; warning.className = 'catalog-warning'; warning.setAttribute('role', 'status');
@@ -190,12 +192,12 @@
     warning.hidden = !dynamic || (!unsupported && !unsupportedEffort && !catalogError);
     if (!warning.hidden) {
       const note = document.createElement('span');
-      note.textContent = catalogError || (unsupported ? 'Выбранная модель недоступна в каталоге' : 'Уровень размышлений не поддерживается моделью');
+      note.textContent = catalogError || (unsupported ? L('model.unavailable') : L('effort.unsupported'));
       warning.append(note);
-      const auto = document.createElement('button'); auto.type = 'button'; auto.className = 'mini-btn'; auto.textContent = 'Авто';
+      const auto = document.createElement('button'); auto.type = 'button'; auto.className = 'mini-btn'; auto.textContent = L('common.auto');
       auto.onclick = async () => { await saveSettings({ [agent]: Object.assign({}, S.settings[agent], unsupportedEffort && !unsupported ? { effort: '' } : { [modelKey(agent)]: '', effort: '' }) }); };
       warning.append(auto);
-      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'mini-btn'; retry.textContent = 'Обновить'; retry.onclick = refreshCodex; warning.append(retry);
+      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'mini-btn'; retry.textContent = L('common.refresh'); retry.onclick = refreshCodex; warning.append(retry);
     }
   }
   $('modelSelect').addEventListener('change', async (e) => { const a = viewAgent(); await saveSettings({ [a]: Object.assign({}, S.settings[a], { [modelKey(a)]: e.target.value }) }); });
@@ -206,9 +208,10 @@
   async function openPlugins() {
     const wrap = document.createElement('div');
     wrap.className = 'modal plug-modal';
-    wrap.innerHTML = '<div class="modal-box plug-box"><div class="modal-head"><h2>Плагины</h2><button type="button" class="icon-btn ghost" id="plugClose" aria-label="Закрыть">✕</button></div>' +
-      '<div class="plug-tabs"><button type="button" class="tab on" data-pa="claude">Claude Code</button><button type="button" class="tab" data-pa="codex">Codex · MCP-серверы</button></div>' +
+    wrap.innerHTML = '<div class="modal-box plug-box"><div class="modal-head"><h2 data-i18n="plugins.title"></h2><button type="button" class="icon-btn ghost" id="plugClose" data-i18n-aria="common.close">✕</button></div>' +
+      '<div class="plug-tabs"><button type="button" class="tab on" data-pa="claude">Claude Code</button><button type="button" class="tab" data-pa="codex" data-i18n="plugins.codexTab"></button></div>' +
       '<div class="modal-body plug-body"></div></div>';
+    I18N.apply(wrap);
     const body = wrap.querySelector('.plug-body');
     const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
@@ -222,12 +225,12 @@
       btn.textContent = label; btn.disabled = true;
       let r; try { r = await fn(); } catch (e) { r = { ok: false, err: String(e.message || e) }; }
       busy = false;
-      if (!r.ok) showAlert({ kind: 'error', title: 'Не получилось', text: (r.err || r.out || '').slice(0, 800) });
-      else toast(plugAgent === 'claude' ? 'Готово. Изменения применятся в новых чатах Claude.' : 'Готово.', 3500);
+      if (!r.ok) showAlert({ kind: 'error', title: L('plugins.failed'), text: (r.err || r.out || '').slice(0, 800) });
+      else toast(plugAgent === 'claude' ? L('plugins.doneClaude') : L('plugins.done'), 3500);
       await draw();
     };
     async function draw() {
-      body.innerHTML = '<div class="muted-note">Загрузка…</div>';
+      body.innerHTML = '<div class="muted-note" data-i18n="common.loading"></div>'; I18N.apply(body);
       const st = await api.pluginsState(plugAgent);
       body.textContent = '';
       if (st.error && !(st.installed || st.servers || []).length && !(st.catalog || []).length) {
@@ -246,8 +249,9 @@
     function mkBtn(text, cls, fn) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ' + (cls || ''); b.textContent = text; b.addEventListener('click', () => fn(b)); return b; }
     function drawClaude(st) {
       const bar = document.createElement('div'); bar.className = 'plug-bar';
-      bar.innerHTML = '<input class="input" id="plugSearch" autocomplete="off"><div class="plug-filter"><button type="button" class="btn on" data-f="all">Все</button><button type="button" class="btn" data-f="inst">Установленные</button></div>';
-      bar.querySelector('#plugSearch').placeholder = 'Поиск среди ' + st.catalog.length + ' плагинов…';
+      bar.innerHTML = '<input class="input" id="plugSearch" autocomplete="off"><div class="plug-filter"><button type="button" class="btn on" data-f="all" data-i18n="plugins.filterAll"></button><button type="button" class="btn" data-f="inst" data-i18n="plugins.filterInstalled"></button></div>';
+      I18N.apply(bar);
+      bar.querySelector('#plugSearch').placeholder = L('plugins.searchPlaceholder', { n: st.catalog.length });
       body.append(bar);
       const list = document.createElement('div'); list.className = 'plug-list'; body.append(list);
       let filter = 'all';
@@ -259,53 +263,55 @@
         if (filter === 'inst') for (const p of st.installed) if (!st.catalog.some((c) => c.id === p.id) && (!q || p.id.toLowerCase().includes(q))) items.push({ id: p.id, name: p.id.split('@')[0], market: p.id.split('@')[1] || '', description: '', installed: true });
         items.sort((a, b) => Number(b.installed) - Number(a.installed) || a.name.localeCompare(b.name));
         const total = items.length; items = items.slice(0, 60);
-        if (!items.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = 'Ничего не найдено.'; list.append(n); }
+        if (!items.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = L('common.nothingFound'); list.append(n); }
         for (const c of items) {
           const inst = instMap.get(c.id);
-          const r = row(c.name, c.description, c.installed ? (inst && !inst.enabled ? 'выключен' : 'установлен') : c.market);
+          const r = row(c.name, c.description, c.installed ? (inst && !inst.enabled ? L('plugins.tagDisabled') : L('plugins.tagInstalled')) : c.market);
           const a = r.querySelector('.plug-act');
-          if (!c.installed) a.append(mkBtn('Установить', 'accent', (b) => act(b, 'Установка…', () => api.pluginsAction('claude', 'install', c.id))));
+          if (!c.installed) a.append(mkBtn(L('plugins.install'), 'accent', (b) => act(b, L('plugins.installing'), () => api.pluginsAction('claude', 'install', c.id))));
           else {
-            a.append(mkBtn(inst && inst.enabled ? 'Выключить' : 'Включить', '', (b) => act(b, '…', () => api.pluginsAction('claude', inst && inst.enabled ? 'disable' : 'enable', c.id))));
-            a.append(mkBtn('Обновить', '', (b) => act(b, 'Обновление…', () => api.pluginsAction('claude', 'update', c.id))));
-            a.append(mkBtn('Удалить', 'danger', (b) => act(b, 'Удаление…', () => api.pluginsAction('claude', 'uninstall', c.id))));
+            a.append(mkBtn(inst && inst.enabled ? L('plugins.disable') : L('plugins.enable'), '', (b) => act(b, '…', () => api.pluginsAction('claude', inst && inst.enabled ? 'disable' : 'enable', c.id))));
+            a.append(mkBtn(L('plugins.update'), '', (b) => act(b, L('plugins.updating'), () => api.pluginsAction('claude', 'update', c.id))));
+            a.append(mkBtn(L('plugins.remove'), 'danger', (b) => act(b, L('plugins.removing'), () => api.pluginsAction('claude', 'uninstall', c.id))));
           }
           list.append(r);
         }
-        if (total > items.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = 'Показаны первые 60 из ' + total + '. Уточните поиск.'; list.append(n); }
+        if (total > items.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = L('plugins.showingFirst', { shown: 60, total }); list.append(n); }
       };
       bar.querySelector('#plugSearch').addEventListener('input', render);
       bar.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.f; bar.querySelectorAll('[data-f]').forEach((x) => x.classList.toggle('on', x === b)); render(); }));
       render();
       const src = document.createElement('div'); src.className = 'plug-src';
-      src.innerHTML = '<h3>ИСТОЧНИКИ (МАРКЕТПЛЕЙСЫ)</h3><div class="plug-srcs plug-list"></div><div class="row"><input class="input" id="mkAdd" placeholder="владелец/репозиторий на GitHub или ссылка на git" autocomplete="off"></div>';
+      src.innerHTML = '<h3 data-i18n="plugins.sources"></h3><div class="plug-srcs plug-list"></div><div class="row"><input class="input" id="mkAdd" data-i18n-placeholder="plugins.sourcePlaceholder" autocomplete="off"></div>';
+      I18N.apply(src);
       const sl = src.querySelector('.plug-srcs');
       for (const m of st.markets) {
         const r = row(m.name, m.source);
-        r.querySelector('.plug-act').append(mkBtn('Удалить', 'danger', (b) => act(b, '…', () => api.pluginsAction('claude', 'market-remove', m.name))));
+        r.querySelector('.plug-act').append(mkBtn(L('plugins.remove'), 'danger', (b) => act(b, '…', () => api.pluginsAction('claude', 'market-remove', m.name))));
         sl.append(r);
       }
-      src.querySelector('.row').append(mkBtn('Добавить источник', 'accent', (b) => { const v = src.querySelector('#mkAdd').value.trim(); if (v) act(b, 'Добавляю…', () => api.pluginsAction('claude', 'market-add', v)); }));
-      src.querySelector('.row').append(mkBtn('Обновить каталоги', '', (b) => act(b, 'Обновляю…', () => api.pluginsAction('claude', 'market-update', ''))));
+      src.querySelector('.row').append(mkBtn(L('plugins.addSource'), 'accent', (b) => { const v = src.querySelector('#mkAdd').value.trim(); if (v) act(b, L('plugins.adding'), () => api.pluginsAction('claude', 'market-add', v)); }));
+      src.querySelector('.row').append(mkBtn(L('plugins.refreshCatalogs'), '', (b) => act(b, L('plugins.refreshing'), () => api.pluginsAction('claude', 'market-update', ''))));
       body.append(src);
     }
     function drawCodex(st) {
       const hint = document.createElement('div'); hint.className = 'muted-note';
-      hint.textContent = 'У Codex нет каталога плагинов: расширения подключаются как MCP-серверы. Добавьте сервер командой запуска (например, npx -y @modelcontextprotocol/server-filesystem C:\\папка) или адресом http(s).';
+      hint.textContent = L('plugins.codexHint');
       body.append(hint);
       const list = document.createElement('div'); list.className = 'plug-list'; body.append(list);
-      if (!st.servers.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = 'MCP-серверов пока нет.'; list.append(n); }
+      if (!st.servers.length) { const n = document.createElement('div'); n.className = 'muted-note'; n.textContent = L('plugins.noMcp'); list.append(n); }
       for (const s of st.servers) {
-        const r = row(s.name, s.detail || s.transport, s.enabled ? '' : 'выключен');
-        r.querySelector('.plug-act').append(mkBtn('Удалить', 'danger', (b) => act(b, '…', () => api.pluginsAction('codex', 'remove', { name: s.name }))));
+        const r = row(s.name, s.detail || s.transport, s.enabled ? '' : L('plugins.tagDisabled'));
+        r.querySelector('.plug-act').append(mkBtn(L('plugins.remove'), 'danger', (b) => act(b, '…', () => api.pluginsAction('codex', 'remove', { name: s.name }))));
         list.append(r);
       }
       const f = document.createElement('div'); f.className = 'plug-src';
-      f.innerHTML = '<h3>ДОБАВИТЬ MCP-СЕРВЕР</h3><div class="row"><input class="input" id="mcpName" placeholder="имя" autocomplete="off" style="max-width:160px"><input class="input" id="mcpCmd" placeholder="команда запуска или https://адрес" autocomplete="off"></div>';
-      f.querySelector('.row').append(mkBtn('Добавить', 'accent', (b) => {
+      f.innerHTML = '<h3 data-i18n="plugins.addMcp"></h3><div class="row"><input class="input" id="mcpName" data-i18n-placeholder="plugins.mcpName" autocomplete="off" style="max-width:160px"><input class="input" id="mcpCmd" data-i18n-placeholder="plugins.mcpCommand" autocomplete="off"></div>';
+      I18N.apply(f);
+      f.querySelector('.row').append(mkBtn(L('common.add'), 'accent', (b) => {
         const name = f.querySelector('#mcpName').value.trim(), v = f.querySelector('#mcpCmd').value.trim();
-        if (!name || !v) { toast('Укажите имя и команду или адрес.'); return; }
-        act(b, 'Добавляю…', () => api.pluginsAction('codex', 'add', /^https?:\/\//i.test(v) ? { name, url: v } : { name, command: v }));
+        if (!name || !v) { toast(L('plugins.mcpRequired')); return; }
+        act(b, L('plugins.adding'), () => api.pluginsAction('codex', 'add', /^https?:\/\//i.test(v) ? { name, url: v } : { name, command: v }));
       }));
       body.append(f);
     }
@@ -352,13 +358,13 @@
     const sep = document.createElement('div'); sep.className = 'sep'; m.append(sep);
     const add = document.createElement('button');
     add.type = 'button';
-    add.innerHTML = '<span>+ Добавить папку…</span>';
+    add.innerHTML = '<span data-i18n="project.add"></span>'; I18N.apply(add);
     add.addEventListener('click', async () => { closeProjMenu(); const s = await api.pickProject(); if (s) { S.settings = s; renderProject(); renderChatList(); openDraft(); } });
     m.append(add);
     if (S.settings.projects.length > 1) {
       const rm = document.createElement('button');
       rm.type = 'button';
-      rm.innerHTML = '<span>Убрать текущую папку из списка</span>';
+      rm.innerHTML = '<span data-i18n="project.remove"></span>'; I18N.apply(rm);
       rm.addEventListener('click', async () => {
         const projects = S.settings.projects.filter((x) => x !== S.settings.currentProject);
         await saveSettings({ projects, currentProject: projects[0] });
@@ -367,7 +373,7 @@
       m.append(rm);
     }
     const lab = document.createElement('label');
-    lab.innerHTML = '<input type="checkbox"> Показывать чаты всех проектов';
+    lab.innerHTML = '<input type="checkbox"> <span data-i18n="project.showAll"></span>'; I18N.apply(lab);
     lab.firstChild.checked = !!S.settings.showAllProjects;
     lab.firstChild.addEventListener('change', async (ev) => { await saveSettings({ showAllProjects: ev.target.checked }); renderChatList(); });
     m.append(lab);
@@ -380,10 +386,10 @@
   function groupOf(t) {
     const d = new Date(t), now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    if (t >= start) return 'СЕГОДНЯ';
-    if (t >= start - 86400000) return 'ВЧЕРА';
-    if (t >= start - 6 * 86400000) return 'НА ЭТОЙ НЕДЕЛЕ';
-    return 'РАНЕЕ';
+    if (t >= start) return L('group.today');
+    if (t >= start - 86400000) return L('group.yesterday');
+    if (t >= start - 6 * 86400000) return L('group.week');
+    return L('group.earlier');
   }
   function renderChatList() {
     const list = $('chatList');
@@ -396,7 +402,7 @@
     if (!items.length) {
       const d = document.createElement('div');
       d.className = 'empty-list';
-      d.textContent = q ? 'Ничего не найдено.' : 'Здесь появятся чаты этого проекта.';
+      d.textContent = q ? L('common.nothingFound') : L('side.emptyChats');
       list.append(d);
       return;
     }
@@ -412,7 +418,8 @@
       row.tabIndex = 0;
       const st = S.states[c.id];
       const running = st && st !== 'idle' && st !== 'error';
-      row.innerHTML = '<span class="dot' + (running ? ' running' : '') + '"></span><span class="ci-text"><span class="ci-title"></span><span class="ci-sub"></span></span><button type="button" class="ci-del" aria-label="Удалить чат">×</button>';
+      row.innerHTML = '<span class="dot' + (running ? ' running' : '') + '"></span><span class="ci-text"><span class="ci-title"></span><span class="ci-sub"></span></span><button type="button" class="ci-del">×</button>';
+      row.querySelector('.ci-del').setAttribute('aria-label', L('chat.delete'));
       row.querySelector('.dot').style.background = st === 'waiting' ? 'var(--warn)' : AGENTS[c.agent].color;
       row.querySelector('.ci-title').textContent = c.title;
       row.querySelector('.ci-sub').textContent = AGENTS[c.agent].label + ' · ' + hhmm(c.updated) + (S.settings.showAllProjects && !isApiChat(c.agent) ? ' · ' + base(c.cwd) : '');
@@ -422,7 +429,7 @@
       del.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (!del.classList.contains('confirm')) {
-          del.classList.add('confirm'); del.textContent = 'Удалить?';
+          del.classList.add('confirm'); del.textContent = L('chat.deleteConfirm');
           setTimeout(() => { del.classList.remove('confirm'); del.textContent = '×'; }, 3000);
           return;
         }
@@ -511,17 +518,20 @@
   });
 
   /* ---------- навыки ---------- */
+  // Built-in skills and directives are shown in the interface language until the user edits them.
+  function skillText(s) { return s.builtin ? Object.assign({}, s, { label: L('skill.' + s.builtin + '.label'), prompt: L('skill.' + s.builtin + '.prompt') }) : s; }
+  function directiveText(d) { return d.builtin ? L('directive.' + d.builtin) : d.text; }
   function renderSkills() {
     const box = $('skills');
     box.textContent = '';
     const skills = isApiChat(viewAgent())
-      ? [{ label: 'Объясни простыми словами', prompt: 'Объясни простыми словами: ' }, { label: 'Улучши текст', prompt: 'Улучши этот текст, сохрани смысл:\n\n' }, { label: 'Переведи на английский', prompt: 'Переведи на английский:\n\n' }, { label: 'Идеи', prompt: 'Предложи 10 идей для ' }]
-      : (S.settings.skills || []);
+      ? [{ label: L('chatSkill.explain'), prompt: L('chatSkill.explain.prompt') + ' ' }, { label: L('chatSkill.improve'), prompt: L('chatSkill.improve.prompt') + '\n\n' }, { label: L('chatSkill.translate'), prompt: L('chatSkill.translate.prompt') + '\n\n' }, { label: L('chatSkill.ideas'), prompt: L('chatSkill.ideas.prompt') + ' ' }]
+      : (S.settings.skills || []).map(skillText);
     for (const s of skills) {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'skill'; b.textContent = I18N.tx(s.label); b.title = I18N.tx(s.prompt);
+      b.type = 'button'; b.className = 'skill'; b.textContent = s.label; b.title = s.prompt;
       b.addEventListener('click', () => {
-        const pr = I18N.tx(s.prompt);
+        const pr = s.prompt;
         if (/[:\s]$/.test(s.prompt)) { $('input').value = pr; autosize(); $('input').focus(); }
         else submit(pr);
       });
@@ -539,8 +549,8 @@
     TodoWrite: 'M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2', Plan: 'M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2'
   };
   const DEFAULT_ICON = 'M12 3l8 4.5v9L12 21l-8-4.5v-9z';
-  const ST_LABEL = { running: 'ИДЁТ', done: 'ГОТОВО', error: 'ОШИБКА' };
-  const ACTION_LABEL = { 'install-sdk': 'Установить Claude Agent SDK', 'login-claude': 'Войти в Claude', 'login-codex': 'Войти в Codex', 'install-claude': 'Установить Claude Code', 'install-codex': 'Установить Codex', settings: 'Открыть настройки' };
+  const ST_LABEL = { running: L('toolState.running'), done: L('toolState.done'), error: L('state.error') };
+  const ACTION_LABEL = { 'install-sdk': L('action.installSdk'), 'login-claude': L('action.loginClaude'), 'login-codex': L('action.loginCodex'), 'install-claude': L('action.installClaude'), 'install-codex': L('action.installCodex'), settings: L('action.openSettings') };
 
   function renderUser(m) {
     const el = document.createElement('div');
@@ -579,28 +589,28 @@
     if (b.type === 'text') return '<div class="md">' + MD.render(b.text) + '</div>';
     if (b.type === 'thinking') {
       const k = msg.id + ':' + (b.key || 'th');
-      return '<details class="thinking" data-open="' + esc(k) + '"' + (S.open.has(k) ? ' open' : '') + '><summary>Размышления</summary><div class="th-body">' + esc(b.text) + '</div></details>';
+      return '<details class="thinking" data-open="' + esc(k) + '"' + (S.open.has(k) ? ' open' : '') + '><summary>' + L('msg.thinking') + '</summary><div class="th-body">' + esc(b.text) + '</div></details>';
     }
     if (b.type === 'tool') {
       const k = msg.id + ':' + b.key;
       const ico = TOOL_ICONS[b.name] || DEFAULT_ICON;
       return '<details class="tool ' + b.status + '" data-open="' + esc(k) + '"' + (S.open.has(k) ? ' open' : '') + '><summary><span class="t-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="' + ico + '"/></svg></span><span class="t-title">' + esc(b.title || b.name) + '</span><span class="t-st">' + (ST_LABEL[b.status] || '') + '</span></summary><div class="t-body">' +
-        (b.detail ? '<pre>' + esc(b.detail) + '</pre>' : '') + (b.output ? '<pre>' + esc(b.output) + '</pre>' : '') + (!b.detail && !b.output ? '<div class="muted-note">Нет подробностей.</div>' : '') + '</div></details>';
+        (b.detail ? '<pre>' + esc(b.detail) + '</pre>' : '') + (b.output ? '<pre>' + esc(b.output) + '</pre>' : '') + (!b.detail && !b.output ? '<div class="muted-note">' + L('msg.noDetails') + '</div>' : '') + '</div></details>';
     }
     if (b.type === 'user-input') {
-      if (b.status !== 'pending' || msg.status !== 'running') return '<div class="approval resolved">' + (b.status === 'resolved' ? 'Ответ отправлен' : 'Запрос устарел') + '</div>';
+      if (b.status !== 'pending' || msg.status !== 'running') return '<div class="approval resolved">' + (b.status === 'resolved' ? L('input.sent') : L('approval.expired')) + '</div>';
       return '<form class="approval input-request" data-input-req="' + esc(b.key) + '" data-input-chat="' + esc(S.chat.id) + '" data-input-msg="' + esc(msg.id) + '">' + (b.questions || []).map((q, i) => {
         const options = q.isSecret ? [] : (q.options || []);
         return '<fieldset data-question="' + i + '"><legend>' + esc(q.header || q.question) + '</legend><p>' + esc(q.question) + '</p>' + options.map((o, j) => '<label class="input-option"><input type="radio" name="q' + i + '" value="' + j + '"><span>' + esc(o.label) + (o.description ? '<small>' + esc(o.description) + '</small>' : '') + '</span></label>').join('') +
-          (options.length && q.isOther ? '<label class="input-option"><input type="radio" name="q' + i + '" value="other">Другой ответ</label>' : '') +
+          (options.length && q.isOther ? '<label class="input-option"><input type="radio" name="q' + i + '" value="other">' + L('input.other') + '</label>' : '') +
           (!options.length || q.isOther ? '<input class="input" data-free type="' + (q.isSecret ? 'password' : 'text') + '" autocomplete="off" aria-label="' + esc(q.question) + '">' : '') + '</fieldset>';
-      }).join('') + '<button class="btn accent" type="submit">Отправить ответ</button><div class="input-error" role="alert"></div></form>';
+      }).join('') + '<button class="btn accent" type="submit">' + L('input.submit') + '</button><div class="input-error" role="alert"></div></form>';
     }
     if (b.type === 'approval') {
       const pending = b.status === 'pending';
-      const st = { allowed: 'Разрешено', always: 'Разрешено до конца сессии', denied: 'Отклонено', expired: 'Запрос устарел' }[b.status] || '';
+      const st = { allowed: L('approval.allowed'), always: L('approval.allowedSession'), denied: L('approval.denied'), expired: L('approval.expired') }[b.status] || '';
       return '<div class="approval' + (pending ? '' : ' resolved') + '"><div class="ap-title">' + esc(b.title) + '</div>' + (b.detail ? '<pre>' + esc(b.detail) + '</pre>' : '') +
-        (pending ? '<div class="ap-actions"><button type="button" class="btn accent" data-ap="allow" data-req="' + esc(b.key) + '">Разрешить</button><button type="button" class="btn" data-ap="always" data-req="' + esc(b.key) + '">Разрешать всегда</button><button type="button" class="btn danger" data-ap="deny" data-req="' + esc(b.key) + '">Запретить</button></div>' : '<div class="ap-status">' + st + '</div>') + '</div>';
+        (pending ? '<div class="ap-actions"><button type="button" class="btn accent" data-ap="allow" data-req="' + esc(b.key) + '">' + L('approval.allow') + '</button><button type="button" class="btn" data-ap="always" data-req="' + esc(b.key) + '">' + L('approval.always') + '</button><button type="button" class="btn danger" data-ap="deny" data-req="' + esc(b.key) + '">' + L('approval.deny') + '</button></div>' : '<div class="ap-status">' + st + '</div>') + '</div>';
     }
     if (b.type === 'error') {
       return '<div class="err-card">' + esc(b.text) + (b.action && ACTION_LABEL[b.action] ? '<div><button type="button" class="btn accent" data-action="' + esc(b.action) + '">' + ACTION_LABEL[b.action] + '</button></div>' : '') + '</div>';
@@ -619,12 +629,12 @@
     const a = AGENTS[m.agent] || AGENTS.claude;
     let html = '<div class="ai-head"><i style="background:' + a.color + ';color:' + a.color + '"></i>' + a.name + ' <time>' + hhmm(m.time) + '</time></div>';
     html += m.blocks.map((b) => blockHtml(b, m)).join('');
-    if (m.status === 'running' && !m.blocks.some((b) => b.type === 'text')) html += '<div class="typing" aria-label="Агент работает"><i></i><i></i><i></i></div>';
-    if (m.status === 'stopped') html += '<div class="stopped-note">Остановлено.</div>';
+    if (m.status === 'running' && !m.blocks.some((b) => b.type === 'text')) html += '<div class="typing" aria-label="' + esc(L('msg.working')) + '"><i></i><i></i><i></i></div>';
+    if (m.status === 'stopped') html += '<div class="stopped-note">' + L('msg.stopped') + '</div>';
     if (m.status !== 'running') {
       const u = m.usage;
-      html += '<div class="ai-foot"><button type="button" class="mini-btn" data-copy="1">Копировать</button>' +
-        (u ? '<span class="meta">' + fmtNum(u.input) + ' вход · ' + fmtNum(u.output) + ' выход' + (u.cost ? ' · $' + u.cost.toFixed(3) : '') + '</span>' : '') + '</div>';
+      html += '<div class="ai-foot"><button type="button" class="mini-btn" data-copy="1">' + L('common.copy') + '</button>' +
+        (u ? '<span class="meta">' + L('msg.usage', { input: fmtNum(u.input), output: fmtNum(u.output) }) + (u.cost ? ' · $' + u.cost.toFixed(3) : '') + '</span>' : '') + '</div>';
     }
     const forms = [...el.querySelectorAll('[data-input-req]')];
     const focused = document.activeElement;
@@ -695,7 +705,7 @@
       const value = option && option.value !== 'other' ? q.options[Number(option.value)].label : free && (!q.options || !q.options.length || q.isSecret || option) ? free.value : '';
       if (!value || !value.trim()) {
         if (q.required === false) continue;
-        form.querySelector('.input-error').textContent = 'Ответьте на все вопросы'; return;
+        form.querySelector('.input-error').textContent = L('input.answerAll'); return;
       }
       answers[q.id] = { answers: [value] };
     }
@@ -707,7 +717,7 @@
     };
     try {
       const result = await api.answerInput(chat.id, block.key, answers);
-      if (result === false || result && result.ok === false) throw new Error(result.error || 'Не удалось отправить ответ');
+      if (result === false || result && result.ok === false) throw new Error(result.error || L('input.failed'));
       if (block.status === 'pending') block.status = 'resolved';
       form.reset();
       const active = currentRequest();
@@ -734,7 +744,7 @@
     const cb = e.target.closest('.code-btn');
     if (cb) {
       const code = cb.closest('.code').querySelector('code').textContent;
-      if (cb.dataset.act === 'copy') { await navigator.clipboard.writeText(code); cb.textContent = 'Скопировано'; setTimeout(() => (cb.textContent = 'Копировать'), 1500); }
+      if (cb.dataset.act === 'copy') { await navigator.clipboard.writeText(code); cb.textContent = L('common.copied'); setTimeout(() => (cb.textContent = L('common.copy')), 1500); }
       else openHtmlPreview(code);
       return;
     }
@@ -744,7 +754,7 @@
       const m = S.chat.messages.find((x) => x.id === id);
       const text = (m.blocks || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n\n');
       await navigator.clipboard.writeText(text);
-      cp.textContent = 'Скопировано'; setTimeout(() => (cp.textContent = 'Копировать'), 1500);
+      cp.textContent = L('common.copied'); setTimeout(() => (cp.textContent = L('common.copy')), 1500);
     }
   });
 
@@ -754,13 +764,14 @@
     if (action === 'studio') return openStudio();
     if (action === 'login-claude') {
       if (!S.env.claudeExe) return runAction('install-claude');
-      openTerminal('& ' + psQuote(S.env.claudeExe), 'claude · вход');
-      toast('В терминале Claude введите /login и пройдите вход в браузере.', 7000);
+      openTerminal('& ' + psQuote(S.env.claudeExe), L('term.claudeLogin'));
+      toast(L('action.loginClaudeHint'), 7000);
     }
-    if (action === 'login-codex') { openTerminal('codex.cmd login', 'codex · вход'); toast('Войдите через аккаунт ChatGPT в открывшемся браузере.', 6000); }
-    if (action === 'install-claude') { openTerminal('npm.cmd install -g @anthropic-ai/claude-code; Write-Host; Write-Host \"Готово. Вернитесь в Stella.\"', 'установка Claude'); waitEnv(); }
-    if (action === 'install-sdk') { openTerminal('npm.cmd install -g @anthropic-ai/claude-agent-sdk --omit=optional; Write-Host; Write-Host \"Готово. Вернитесь в Stella.\"', 'установка SDK'); waitEnv(); }
-    if (action === 'install-codex') { openTerminal('npm.cmd install -g @openai/codex; Write-Host; Write-Host \"Готово. Вернитесь в Stella.\"', 'установка Codex'); waitEnv(); }
+    if (action === 'login-codex') { openTerminal('codex.cmd login', L('term.codexLogin')); toast(L('action.loginCodexHint'), 6000); }
+    const done = '; Write-Host; Write-Host ' + psQuote(L('term.installDone'));
+    if (action === 'install-claude') { openTerminal('npm.cmd install -g @anthropic-ai/claude-code' + done, L('term.installClaude')); waitEnv(); }
+    if (action === 'install-sdk') { openTerminal('npm.cmd install -g @anthropic-ai/claude-agent-sdk --omit=optional' + done, L('term.installSdk')); waitEnv(); }
+    if (action === 'install-codex') { openTerminal('npm.cmd install -g @openai/codex' + done, L('term.installCodex')); waitEnv(); }
   }
   let envTimer = null;
   function waitEnv() {
@@ -785,7 +796,7 @@
   async function submit(textOverride) {
     const text = (textOverride != null ? textOverride : $('input').value).trim();
     if (!text && !S.attachments.length) return;
-    if (S.chat && S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) { toast('Агент ещё отвечает. Дождитесь ответа или нажмите «Стоп».'); return; }
+    if (S.chat && S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) { toast(L('chat.busy')); return; }
     const atts = S.attachments.slice();
     if (!S.chat) {
       const c = await api.createChat({ agent: S.agent, cwd: S.settings.currentProject });
@@ -814,7 +825,7 @@
       ch.className = 'att-chip';
       if (a.preview) { const img = document.createElement('img'); img.src = a.preview; img.alt = ''; ch.append(img); }
       const s = document.createElement('span'); s.textContent = a.name; ch.append(s);
-      const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Убрать ' + a.name);
+      const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', L('composer.removeAttachment', { name: a.name }));
       x.addEventListener('click', () => { S.attachments.splice(i, 1); renderAttachments(); });
       ch.append(x);
       row.append(ch);
@@ -831,7 +842,7 @@
     const bytes = new Uint8Array(buf);
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
-    const name = file.name && file.name !== 'image.png' ? file.name : 'вставка-' + Date.now() + '.' + ext;
+    const name = file.name && file.name !== 'image.png' ? file.name : 'pasted-' + Date.now() + '.' + ext;
     S.attachments.push({ name, data: btoa(bin), mime: file.type, preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null });
   }
   $('attachBtn').addEventListener('click', async () => {
@@ -867,9 +878,13 @@
   (function initHudSections() {
     const hud = $('hud');
     const collapsed = new Set(S.settings.hudCollapsed || []);
+    // Collapsed sections are stored by locale key; older versions stored the visible (ru/en) label text.
+    const legacyName = (lang, key) => String((window.stellaLocales || {})[lang]?.[key] || '').replace('●', '').trim();
     [...hud.querySelectorAll(':scope > .hud-label')].forEach((label) => {
-      const key = label.textContent.replace('●', '').trim();
-      if ((key === 'ЛИМИТЫ' || key === 'LIMITS') && (collapsed.has('ЛИМИТЫ CLAUDE') || collapsed.has('CLAUDE LIMITS'))) { collapsed.delete('ЛИМИТЫ CLAUDE'); collapsed.delete('CLAUDE LIMITS'); collapsed.add(key); }
+      const key = label.dataset.i18n;
+      const legacy = ['ru', 'en'].map((l) => legacyName(l, key));
+      if (key === 'hud.limits') legacy.push('ЛИМИТЫ CLAUDE', 'CLAUDE LIMITS'); // i18n-ignore: section names saved by 1.6
+      if (legacy.some((x) => collapsed.has(x))) { legacy.forEach((x) => collapsed.delete(x)); collapsed.add(key); }
       const body = document.createElement('div');
       body.className = 'hud-body';
       let n = label.nextElementSibling;
@@ -893,15 +908,15 @@
     account.textContent = '';
     if (codexAccount) {
       const a = codexAccount.account;
-      const title = document.createElement('div'); title.textContent = a ? 'ChatGPT · ' + (a.email || a.planType || a.type || 'Аккаунт подключён') : codexAccount.requiresOpenaiAuth ? 'ChatGPT · Требуется вход' : 'Codex · Авторизация не требуется'; account.append(title);
+      const title = document.createElement('div'); title.textContent = a ? 'ChatGPT · ' + (a.email || a.planType || a.type || L('account.connected')) : codexAccount.requiresOpenaiAuth ? 'ChatGPT · ' + L('account.signInRequired') : 'Codex · ' + L('account.noAuthNeeded'); account.append(title);
 
     }
     box.textContent = '';
     const rows = [
-      { key: 'claude', ok: !!(S.env.claudeExe && S.env.claudeSdk), status: !S.env.claudeExe ? 'НЕ НАЙДЕН' : !S.env.claudeSdk ? 'НУЖЕН SDK' : 'УСТАНОВЛЕН', actions: !S.env.claudeExe ? [['install-claude', 'Установить']] : !S.env.claudeSdk ? [['install-sdk', 'Установить SDK'], ['login-claude', 'Войти']] : [['login-claude', 'Войти / сменить аккаунт']] },
-      { key: 'codex', ok: !!S.env.codexJs, status: S.env.codexJs ? 'УСТАНОВЛЕН' : 'НЕ НАЙДЕН', actions: S.env.codexJs ? [['login-codex', 'Войти / сменить аккаунт']] : [['install-codex', 'Установить']] },
-      { key: 'chatgpt', ok: S.settings.chatgpt.backend === 'api' ? S.settings.hasApiKey : !!S.env.codexJs, status: S.settings.chatgpt.backend === 'api' ? (S.settings.hasApiKey ? 'API-КЛЮЧ' : 'НЕТ КЛЮЧА') : 'АККАУНТ CHATGPT', actions: [['settings', 'Настроить']] },
-      { key: 'images', ok: cfReady(), status: cfReady() ? 'CLOUDFLARE' : 'НЕ НАСТРОЕНА', actions: [['studio', cfReady() ? 'Открыть' : 'Настроить']] }
+      { key: 'claude', ok: !!(S.env.claudeExe && S.env.claudeSdk), status: !S.env.claudeExe ? L('sys.notFound') : !S.env.claudeSdk ? L('sys.sdkNeeded') : L('sys.installed'), actions: !S.env.claudeExe ? [['install-claude', L('sys.install')]] : !S.env.claudeSdk ? [['install-sdk', L('sys.installSdk')], ['login-claude', L('sys.signIn')]] : [['login-claude', L('sys.switchAccount')]] },
+      { key: 'codex', ok: !!S.env.codexJs, status: S.env.codexJs ? L('sys.installed') : L('sys.notFound'), actions: S.env.codexJs ? [['login-codex', L('sys.switchAccount')]] : [['install-codex', L('sys.install')]] },
+      { key: 'chatgpt', ok: S.settings.chatgpt.backend === 'api' ? S.settings.hasApiKey : !!S.env.codexJs, status: S.settings.chatgpt.backend === 'api' ? (S.settings.hasApiKey ? L('sys.apiKey') : L('sys.noKey')) : L('sys.chatgptAccount'), actions: [['settings', L('sys.configure')]] },
+      { key: 'images', ok: cfReady(), status: cfReady() ? 'CLOUDFLARE' : L('sys.notConfigured'), actions: [['studio', cfReady() ? L('common.open') : L('sys.configure')]] }
     ];
     for (const r of rows) {
       const d = document.createElement('div');
@@ -912,7 +927,7 @@
       if (running) d.querySelector('i').style.animation = 'pulse 1s infinite';
       d.querySelector('span').textContent = AGENTS[r.key].label;
       const st = d.querySelector('.st');
-      st.textContent = running ? 'РАБОТАЕТ' : r.status;
+      st.textContent = running ? L('sys.running') : r.status;
       st.style.color = r.ok ? 'var(--muted)' : 'var(--err)';
       for (const [act, label] of r.actions) {
         const b = document.createElement('button');
@@ -944,7 +959,7 @@
       const used = Math.min(100, Math.max(0, info.usedPercent));
       const remaining = 100 - used;
       const mins = info.windowDurationMins;
-      const label = mins === 300 ? 'ЗА 5 ЧАСОВ' : mins === 10080 ? 'ЗА 7 ДНЕЙ' : Number.isFinite(mins) && mins > 0 ? mins + ' мин' : key === 'primary' ? 'Основной лимит' : 'Дополнительный лимит';
+      const label = mins === 300 ? L('limits.fiveHours') : mins === 10080 ? L('limits.sevenDays') : Number.isFinite(mins) && mins > 0 ? L('limits.minutes', { n: mins }) : key === 'primary' ? L('limits.primary') : L('limits.secondary');
       const row = document.createElement('div'); row.className = 'limit account-limit';
       row.style.setProperty('--limit-accent', agent === 'chatgpt' ? '#6FD3A0' : '#5FB8C9');
       row.innerHTML = '<div class="limit-provider"></div><div class="limit-head"><span></span><b></b></div><div class="bar"><div></div></div><div class="limit-foot"></div>';
@@ -953,13 +968,13 @@
       row.querySelector('.limit-head b').textContent = Math.round(remaining) + '%';
       const bar = row.querySelector('.bar');
       bar.setAttribute('role', 'progressbar');
-      bar.setAttribute('aria-label', AGENTS[agent].label + ' · ' + label + ' · ' + (I18N.locale.startsWith('ru') ? 'Осталось' : 'Remaining'));
+      bar.setAttribute('aria-label', AGENTS[agent].label + ' · ' + label + ' · ' + L('limits.remaining'));
       bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.setAttribute('aria-valuenow', String(remaining));
       row.querySelector('.bar div').style.width = remaining + '%';
       const reset = info.resetsAt;
       const date = reset != null ? new Date(typeof reset === 'number' ? reset * (reset < 1e12 ? 1000 : 1) : reset) : null;
       const resets = date && Number.isFinite(date.getTime()) ? date.toLocaleString(I18N.locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-      row.querySelector('.limit-foot').textContent = (I18N.locale.startsWith('ru') ? 'Осталось' : 'Remaining') + (resets ? ' · ' + (I18N.locale.startsWith('ru') ? 'Сброс: ' : 'Resets: ') + resets : '');
+      row.querySelector('.limit-foot').textContent = L('limits.remaining') + (resets ? ' · ' + L('limits.resets', { when: resets }) : '');
       box.append(row);
     }
   }
@@ -981,21 +996,21 @@
       renderAccountLimits(box);
       if (!box.children.length) {
         const note = document.createElement('div'); note.className = 'muted-note';
-        note.textContent = isApiChat(agent) ? 'Лимиты подписки недоступны для API.' : 'Лимиты аккаунта пока недоступны.';
+        note.textContent = isApiChat(agent) ? L('limits.noApi') : L('limits.notYet');
         box.append(note);
       }
       return;
     }
-    const L = (S.usage.limits && S.usage.limits.claude) || {};
-    const show = [['seven_day', 'ЗА 7 ДНЕЙ'], ['five_hour', 'ЗА 5 ЧАСОВ'], ['seven_day_opus', '7 ДНЕЙ · OPUS'], ['seven_day_sonnet', '7 ДНЕЙ · SONNET']].filter(([k]) => L[k]);
+    const CL = (S.usage.limits && S.usage.limits.claude) || {};
+    const show = [['seven_day', L('limits.sevenDays')], ['five_hour', L('limits.fiveHours')], ['seven_day_opus', L('limits.sevenDaysOpus')], ['seven_day_sonnet', L('limits.sevenDaysSonnet')]].filter(([k]) => CL[k]);
     if (!show.length) {
-      box.innerHTML = '<div class="muted-note">Реальный процент лимита подписки Claude появится после первого ответа Claude.</div>';
+      box.innerHTML = '<div class="muted-note"></div>'; box.firstChild.textContent = L('limits.claudeAfterReply');
       renderAccountLimits(box);
       return;
     }
     box.textContent = '';
     for (const [k, label] of show) {
-      const info = L[k];
+      const info = CL[k];
       let pct = info.utilization;
       if (pct == null) pct = info.status === 'rejected' ? 100 : null;
       else if (pct <= 1) pct = pct * 100;
@@ -1009,7 +1024,7 @@
       d.querySelector('.limit-head b').textContent = v;
       d.querySelector('.bar div').style.width = (pct || 0) + '%';
       if (pct >= 90) d.querySelector('.bar').classList.add('full'); else if (pct >= 70) d.querySelector('.bar').classList.add('hot');
-      d.querySelector('.limit-foot').textContent = (info.status === 'rejected' ? 'Лимит исчерпан. ' : '') + (resets ? 'Сброс: ' + resets : '');
+      d.querySelector('.limit-foot').textContent = [info.status === 'rejected' ? L('limits.reached') : '', resets ? L('limits.resets', { when: resets }) : ''].filter(Boolean).join(' ');
       box.append(d);
     }
     renderAccountLimits(box);
@@ -1027,8 +1042,8 @@
       d.querySelector('span').textContent = AGENTS[k].label.toUpperCase();
       d.querySelector('b').textContent = fmtNum(u.input + u.output);
       d.querySelector('b').style.color = AGENTS[k].color;
-      d.querySelector('small').textContent = u.runs + ' запр.';
-      d.title = 'Токены за неделю: ' + u.input + ' на входе, ' + u.output + ' на выходе' + (u.cost ? '. Оценка стоимости: $' + u.cost.toFixed(2) : '');
+      d.querySelector('small').textContent = L('usage.runs', { n: u.runs });
+      d.title = L('usage.tokens', { input: u.input, output: u.output }) + (u.cost ? ' ' + L('usage.cost', { cost: u.cost.toFixed(2) }) : '');
       box.append(d);
     }
   }
@@ -1042,10 +1057,10 @@
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'dir' + (d.done ? ' done' : '');
       b.innerHTML = '<span class="box"></span><span></span>';
-      b.lastChild.textContent = d.text;
+      b.lastChild.textContent = directiveText(d);
       b.addEventListener('click', async () => { list[i] = Object.assign({}, d, { done: !d.done }); await saveSettings({ directives: list }); renderDirectives(); });
       const del = document.createElement('button');
-      del.type = 'button'; del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', 'Удалить директиву');
+      del.type = 'button'; del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', L('directive.delete'));
       del.addEventListener('click', async () => { list.splice(i, 1); await saveSettings({ directives: list }); renderDirectives(); });
       li.append(b, del);
       ul.append(li);
@@ -1068,7 +1083,7 @@
       for (const f of m.files || []) if (!files.includes(f)) files.push(f);
       for (const a of m.attachments || []) if (!files.includes(a.path)) files.push(a.path);
     }
-    if (!files.length) { box.innerHTML = '<div class="muted-note">Файлы, которые агент создаст или изменит, появятся здесь.</div>'; return; }
+    if (!files.length) { box.innerHTML = '<div class="muted-note"></div>'; box.firstChild.textContent = L('files.empty'); return; }
     for (const f of files.slice().reverse()) {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'file-item';
@@ -1105,20 +1120,20 @@
     }
     const r = await api.readFile(p);
     if (!r.ok) { body.innerHTML = '<div class="drawer-note"></div>'; body.firstChild.textContent = r.error; return; }
-    if (r.text == null) { body.innerHTML = '<div class="drawer-note">Этот файл нельзя показать здесь. Нажмите «Открыть», чтобы открыть его в программе по умолчанию.</div>'; return; }
+    if (r.text == null) { body.innerHTML = '<div class="drawer-note"></div>'; body.firstChild.textContent = L('preview.unsupported'); return; }
     if (/\.md$/i.test(p)) { const d = document.createElement('div'); d.className = 'md'; d.innerHTML = MD.render(r.text); body.append(d); return; }
     const pre = document.createElement('pre');
     pre.textContent = r.text;
     body.append(pre);
   }
   function openHtmlPreview(code) {
-    openDrawer('Предпросмотр HTML', null);
+    openDrawer(L('preview.html'), null);
     const body = $('drawerBody');
     body.textContent = '';
     const fr = document.createElement('iframe');
     fr.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
     fr.srcdoc = code;
-    fr.title = 'Предпросмотр HTML';
+    fr.title = L('preview.html');
     body.append(fr);
   }
   $('drawerClose').addEventListener('click', closeDrawer);
@@ -1141,7 +1156,7 @@
       w.className = 'ttab' + (id === activeTerm ? ' on' : '') + (t.dead ? ' dead' : '');
       const n = document.createElement('button'); n.type = 'button'; n.className = 'name'; n.textContent = t.name;
       n.addEventListener('click', () => focusTerm(id));
-      const x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.setAttribute('aria-label', 'Закрыть ' + t.name);
+      const x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.setAttribute('aria-label', L('term.close', { name: t.name }));
       x.addEventListener('click', () => closeTerm(id));
       w.append(n, x); host.append(w);
     }
@@ -1177,7 +1192,7 @@
     });
     pane.addEventListener('contextmenu', (e) => { e.preventDefault(); navigator.clipboard.readText().then((s) => s && xterm.paste(s)); });
     const r = await api.termSpawn({ id, command: command || '', cwd: S.settings.currentProject, cols: xterm.cols, rows: xterm.rows });
-    if (!r.ok) { xterm.writeln('\x1b[31mНе удалось открыть терминал: ' + r.error + '\x1b[0m'); t.dead = true; }
+    if (!r.ok) { xterm.writeln('\x1b[31m' + L('term.openFailed', { message: r.error }) + '\x1b[0m'); t.dead = true; }
     renderTermTabs();
   }
   function closeTerm(id) {
@@ -1193,7 +1208,7 @@
     const t = terms.get(id);
     if (!t) return;
     t.dead = true;
-    t.xterm.writeln('\r\n\x1b[90m[сессия завершена, код ' + exitCode + ']\x1b[0m');
+    t.xterm.writeln('\r\n\x1b[90m' + L('term.exited', { code: exitCode }) + '\x1b[0m');
     renderTermTabs();
     api.checkEnv().then((env) => { S.env = env; renderSys(); refreshCodex(); });
   });
@@ -1207,7 +1222,7 @@
   let genActive = 0;
   let gallery = [];
   let budget = null;
-  const SIZES = [['1024x1024', 'Квадрат 1024×1024'], ['1344x768', 'Широкая 16:9'], ['768x1344', 'Вертикальная 9:16'], ['1152x896', 'Альбомная 4:3'], ['896x1152', 'Портретная 3:4'], ['1536x1536', 'Большая 1536×1536']];
+  const SIZES = [['1024x1024', L('studio.size.square')], ['1344x768', L('studio.size.wide')], ['768x1344', L('studio.size.vertical')], ['1152x896', L('studio.size.landscape')], ['896x1152', L('studio.size.portrait')], ['1536x1536', L('studio.size.large')]];
   function cfReady() { return !!(S.settings.hasCfToken && (S.settings.cfAccountId || '').trim()); }
   function estimate(model, w, h, steps) {
     const tiles = Math.ceil(w / 512) * Math.ceil(h / 512);
@@ -1228,7 +1243,7 @@
     const n = Number($('genCount').value);
     const cost = estimate(p.model, p.width, p.height, p.steps) * n;
     const left = budget ? Math.max(0, budget.limit - budget.neurons) : null;
-    $('genCost').textContent = '≈ ' + cost + ' нейронов' + (left != null ? ' · хватит ещё примерно на ' + Math.floor(left / Math.max(1, cost / n)) + ' шт.' : '');
+    $('genCost').textContent = L('studio.cost', { n: cost }) + (left != null ? ' · ' + L('studio.enoughFor', { n: Math.floor(left / Math.max(1, cost / n)) }) : '');
   }
   for (const [v, l] of SIZES) { const o = document.createElement('option'); o.value = v; o.textContent = l; $('genSize').append(o); }
   ['genModel', 'genSize', 'genSteps', 'genCount'].forEach((id) => $(id).addEventListener('change', syncGenForm));
@@ -1239,7 +1254,7 @@
     $('budgetVal').textContent = Math.round(pct) + '%';
     $('budgetBar').style.width = pct + '%';
     $('budgetBar').parentElement.className = 'bar' + (pct >= 90 ? ' full' : pct >= 70 ? ' hot' : '');
-    $('budgetFoot').textContent = 'Использовано ≈ ' + budget.neurons + ' из ' + budget.limit + ' нейронов · картинок сегодня: ' + budget.images + ' · обновление в 03:00 МСК. Это оценка Stella по ценам Cloudflare.';
+    $('budgetFoot').textContent = L('studio.budget', { used: budget.neurons, limit: budget.limit, images: budget.images });
     syncGenForm();
   }
 
@@ -1247,25 +1262,27 @@
     const box = $('cfSetup');
     box.hidden = cfReady();
     if (cfReady()) { box.textContent = ''; return; }
-    box.innerHTML = '<h3>Подключите Cloudflare — это бесплатно</h3><ol>' +
-      '<li>Зарегистрируйтесь на Cloudflare (карта не нужна).</li>' +
-      '<li>В панели Cloudflare откройте раздел <b>AI → Workers AI</b> и выберите <b>«Use REST API»</b>.</li>' +
-      '<li>Скопируйте <b>Account ID</b> и нажмите <b>«Create a Workers AI API Token»</b>, затем скопируйте токен.</li>' +
-      '<li>Вставьте оба значения ниже.</li></ol>' +
-      '<div><button type="button" class="btn" id="cfOpenDash">Открыть панель Cloudflare</button></div>' +
-      '<div class="grid2"><div class="field"><label for="cfAcc">Account ID</label><input id="cfAcc" class="input" placeholder="32 символа"></div>' +
-      '<div class="field"><label for="cfTok">API-токен</label><input id="cfTok" class="input" type="password" placeholder="токен Workers AI"></div></div>' +
-      '<div><button type="button" class="btn accent" id="cfSave">Сохранить и подключить</button></div>';
+    // Step texts are trusted locale strings with inline <b> markup.
+    box.innerHTML = '<h3 data-i18n="cf.title"></h3><ol>' +
+      '<li>' + L('cf.step1') + '</li>' +
+      '<li>' + L('cf.step2') + '</li>' +
+      '<li>' + L('cf.step3') + '</li>' +
+      '<li>' + L('cf.step4') + '</li></ol>' +
+      '<div><button type="button" class="btn" id="cfOpenDash" data-i18n="cf.openDashboard"></button></div>' +
+      '<div class="grid2"><div class="field"><label for="cfAcc">Account ID</label><input id="cfAcc" class="input" data-i18n-placeholder="cf.accountPlaceholder"></div>' +
+      '<div class="field"><label for="cfTok" data-i18n="cf.token"></label><input id="cfTok" class="input" type="password" data-i18n-placeholder="cf.tokenPlaceholder"></div></div>' +
+      '<div><button type="button" class="btn accent" id="cfSave" data-i18n="cf.save"></button></div>';
+    I18N.apply(box);
     box.querySelector('#cfAcc').value = S.settings.cfAccountId || '';
     box.querySelector('#cfOpenDash').addEventListener('click', () => api.openUrl('https://dash.cloudflare.com/?to=/:account/ai/workers-ai'));
     box.querySelector('#cfSave').addEventListener('click', async () => {
       const acc = box.querySelector('#cfAcc').value.trim();
       const tok = box.querySelector('#cfTok').value.trim();
-      if (!acc || (!tok && !S.settings.hasCfToken)) { toast('Нужны оба значения: Account ID и токен.'); return; }
+      if (!acc || (!tok && !S.settings.hasCfToken)) { toast(L('cf.bothRequired')); return; }
       await saveSettings({ cfAccountId: acc });
       if (tok) S.settings = await api.setCfToken(tok);
       renderCfSetup(); renderSys();
-      toast('Cloudflare подключён. Можно создавать картинки.');
+      toast(L('cf.connected'));
       $('genPrompt').focus();
     });
   }
@@ -1276,12 +1293,12 @@
     card.style.setProperty('--ar', w + ' / ' + h);
     const cv = document.createElement('canvas');
     cv.setAttribute('aria-hidden', 'true');
-    const t = document.createElement('div'); t.className = 'ptxt'; t.textContent = 'СИНТЕЗ · 0 С';
+    const t = document.createElement('div'); t.className = 'ptxt'; t.textContent = L('studio.synth', { s: 0 });
     card.append(cv, t);
     const orb = new StellaOrb(cv, { count: 70, ring: false, color: AGENTS.images.color });
     orb.setState('thinking');
     const started = Date.now();
-    const timer = setInterval(() => { t.textContent = 'СИНТЕЗ · ' + Math.round((Date.now() - started) / 1000) + ' С'; }, 250);
+    const timer = setInterval(() => { t.textContent = L('studio.synth', { s: Math.round((Date.now() - started) / 1000) }); }, 250);
     card._done = () => { clearInterval(timer); orb.destroy(); };
     return card;
   }
@@ -1301,11 +1318,11 @@
     const p = document.createElement('p'); p.textContent = it.prompt; p.title = it.usedPrompt || it.prompt;
     const acts = document.createElement('div'); acts.className = 'acts';
     const mk = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'mini-btn'; b.textContent = label; b.addEventListener('click', fn); acts.append(b); return b; };
-    mk('Ещё вариант', () => generate({ prompt: it.prompt, model: it.model, width: it.width, height: it.height, steps: it.steps }, 1));
-    mk('Запрос', () => { $('genPrompt').value = it.prompt; $('genModel').value = it.model; syncGenForm(); $('genPrompt').focus(); });
-    mk('В папке', () => api.revealFile(it.file));
-    const del = mk('Удалить', async () => {
-      if (!del.dataset.c) { del.dataset.c = '1'; del.textContent = 'Точно?'; setTimeout(() => { delete del.dataset.c; del.textContent = 'Удалить'; }, 3000); return; }
+    mk(L('studio.another'), () => generate({ prompt: it.prompt, model: it.model, width: it.width, height: it.height, steps: it.steps }, 1));
+    mk(L('studio.prompt'), () => { $('genPrompt').value = it.prompt; $('genModel').value = it.model; syncGenForm(); $('genPrompt').focus(); });
+    mk(L('common.inFolder'), () => api.revealFile(it.file));
+    const del = mk(L('common.delete'), async () => {
+      if (!del.dataset.c) { del.dataset.c = '1'; del.textContent = L('common.sure'); setTimeout(() => { delete del.dataset.c; del.textContent = L('common.delete'); }, 3000); return; }
       const r = await api.imagesDelete(it.id);
       gallery = r.items; budget = r.stats; renderGallery(); renderBudget();
     });
@@ -1319,7 +1336,7 @@
     [...g.querySelectorAll('.gen-card:not(.pending), .gallery-empty')].forEach((x) => x.remove());
     if (!gallery.length && !g.querySelector('.pending')) {
       const e = document.createElement('div'); e.className = 'gallery-empty';
-      e.textContent = 'Здесь появятся ваши картинки. Опишите идею выше и нажмите «Создать».';
+      e.textContent = L('studio.empty');
       g.append(e);
     }
     for (const it of gallery) g.append(imageCard(it));
@@ -1328,7 +1345,7 @@
   function updateStudioOrb() { if (orbStudio) orbStudio.setState(genActive ? 'thinking' : 'idle'); renderSys(); }
 
   async function generate(params, count) {
-    if (!cfReady()) { renderCfSetup(); toast('Сначала подключите Cloudflare.'); return; }
+    if (!cfReady()) { renderCfSetup(); toast(L('cf.connectFirst')); return; }
     const prompt = params.prompt;
     const enhance = $('genEnhance').checked;
     const g = $('gallery');
@@ -1399,7 +1416,7 @@
     m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) closeModal(m.id); });
   });
 
-  function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
+  function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return I18N.apply(t.content.firstChild); }
 
   function openSettings() {
     const s = S.settings;
@@ -1408,12 +1425,12 @@
 
     // ChatGPT
     const gpt = el('<div class="sect"><h3>CHATGPT</h3>' +
-      '<div class="radio-row"><label class="check"><input type="radio" name="gptb" value="codex"> Через аккаунт ChatGPT (вход как в Codex, без доплат)</label>' +
-      '<label class="check"><input type="radio" name="gptb" value="api"> Через OpenAI API-ключ (оплата по токенам)</label></div>' +
-      '<div class="field" data-g="codex"><label for="gptModel">Модель для чата (пусто — по умолчанию)</label><input id="gptModel" class="input" placeholder="например, gpt-5"></div>' +
-      '<div class="field" data-g="api"><label for="apiKey">API-ключ OpenAI</label><div class="row"><input id="apiKey" class="input" type="password" placeholder="sk-…"><button type="button" class="btn" id="apiKeySave">Сохранить</button><button type="button" class="btn danger" id="apiKeyDel">Удалить</button></div>' +
+      '<div class="radio-row"><label class="check"><input type="radio" name="gptb" value="codex"> <span data-i18n="settings.gpt.viaAccount"></span></label>' +
+      '<label class="check"><input type="radio" name="gptb" value="api"> <span data-i18n="settings.gpt.viaApi"></span></label></div>' +
+      '<div class="field" data-g="codex"><label for="gptModel" data-i18n="settings.gpt.model"></label><input id="gptModel" class="input" data-i18n-placeholder="settings.gpt.modelPlaceholder"></div>' +
+      '<div class="field" data-g="api"><label for="apiKey" data-i18n="settings.gpt.apiKey"></label><div class="row"><input id="apiKey" class="input" type="password" placeholder="sk-…"><button type="button" class="btn" id="apiKeySave" data-i18n="common.save"></button><button type="button" class="btn danger" id="apiKeyDel" data-i18n="common.delete"></button></div>' +
       '<div class="hint" id="apiKeyState"></div></div>' +
-      '<div class="field" data-g="api"><label for="apiModel">Модель API</label><div class="row"><input id="apiModel" class="input" list="apiModels"><datalist id="apiModels"></datalist><button type="button" class="btn" id="loadModels">Загрузить список</button></div></div></div>');
+      '<div class="field" data-g="api"><label for="apiModel" data-i18n="settings.gpt.apiModel"></label><div class="row"><input id="apiModel" class="input" list="apiModels"><datalist id="apiModels"></datalist><button type="button" class="btn" id="loadModels" data-i18n="settings.gpt.loadModels"></button></div></div></div>');
     body.append(gpt);
     const syncG = () => { const v = gpt.querySelector('input[name=gptb]:checked').value; gpt.querySelectorAll('[data-g]').forEach((f) => (f.hidden = f.dataset.g !== v)); };
     gpt.querySelector('input[value="' + (s.chatgpt.backend || 'codex') + '"]').checked = true;
@@ -1423,12 +1440,12 @@
     gpt.querySelector('#gptModel').addEventListener('change', (e) => saveSettings({ chatgpt: Object.assign({}, S.settings.chatgpt, { model: e.target.value.trim() }) }));
     gpt.querySelector('#apiModel').value = s.chatgpt.apiModel || 'gpt-5';
     gpt.querySelector('#apiModel').addEventListener('change', (e) => saveSettings({ chatgpt: Object.assign({}, S.settings.chatgpt, { apiModel: e.target.value.trim() }) }));
-    const keyState = () => { gpt.querySelector('#apiKeyState').textContent = S.settings.hasApiKey ? 'Ключ сохранён в зашифрованном виде.' : 'Ключ не задан. Его можно создать на platform.openai.com.'; };
+    const keyState = () => { gpt.querySelector('#apiKeyState').textContent = S.settings.hasApiKey ? L('settings.gpt.keyStored') : L('settings.gpt.noKey'); };
     keyState();
     gpt.querySelector('#apiKeySave').addEventListener('click', async () => {
       const v = gpt.querySelector('#apiKey').value.trim();
       if (!v) return;
-      try { S.settings = await api.setApiKey(v); gpt.querySelector('#apiKey').value = ''; keyState(); renderSys(); toast('Ключ сохранён.'); } catch (e) { toast('Не удалось сохранить ключ: ' + e.message); }
+      try { S.settings = await api.setApiKey(v); gpt.querySelector('#apiKey').value = ''; keyState(); renderSys(); toast(L('settings.gpt.keySaved')); } catch (e) { toast(L('settings.gpt.keySaveFailed', { message: e.message })); }
     });
     gpt.querySelector('#apiKeyDel').addEventListener('click', async () => { S.settings = await api.setApiKey(''); keyState(); renderSys(); });
     gpt.querySelector('#loadModels').addEventListener('click', async () => {
@@ -1436,33 +1453,33 @@
         const list = await api.chatgptModels();
         const dl = gpt.querySelector('#apiModels'); dl.textContent = '';
         for (const m of list) { const o = document.createElement('option'); o.value = m; dl.append(o); }
-        toast('Найдено моделей: ' + list.length);
-      } catch (e) { toast('Не удалось получить список моделей. Проверьте ключ.'); }
+        toast(L('settings.gpt.modelsFound', { n: list.length }));
+      } catch (e) { toast(L('settings.gpt.modelsFailed')); }
     });
 
     // Cloudflare
-    const cfS = el('<div class="sect"><h3>СТУДИЯ · CLOUDFLARE</h3><div class="grid2">' +
+    const cfS = el('<div class="sect"><h3 data-i18n="settings.cf.title"></h3><div class="grid2">' +
       '<div class="field"><label for="setCfAcc">Account ID</label><input id="setCfAcc" class="input"></div>' +
-      '<div class="field"><label for="setCfTok">API-токен Workers AI</label><div class="row"><input id="setCfTok" class="input" type="password" placeholder="новый токен"><button type="button" class="btn" id="setCfSave">Сохранить</button></div></div></div>' +
+      '<div class="field"><label for="setCfTok" data-i18n="settings.cf.token"></label><div class="row"><input id="setCfTok" class="input" type="password" data-i18n-placeholder="settings.cf.newToken"><button type="button" class="btn" id="setCfSave" data-i18n="common.save"></button></div></div></div>' +
       '<div class="hint" id="setCfState"></div></div>');
     body.append(cfS);
     cfS.querySelector('#setCfAcc').value = s.cfAccountId || '';
-    const cfState = () => { cfS.querySelector('#setCfState').textContent = S.settings.hasCfToken ? 'Токен сохранён в зашифрованном виде.' : 'Токен не задан.'; };
+    const cfState = () => { cfS.querySelector('#setCfState').textContent = S.settings.hasCfToken ? L('settings.cf.tokenStored') : L('settings.cf.noToken'); };
     cfState();
     cfS.querySelector('#setCfAcc').addEventListener('change', async (e) => { await saveSettings({ cfAccountId: e.target.value.trim() }); renderSys(); });
     cfS.querySelector('#setCfSave').addEventListener('click', async () => {
       const v = cfS.querySelector('#setCfTok').value.trim();
       S.settings = await api.setCfToken(v);
       cfS.querySelector('#setCfTok').value = '';
-      cfState(); renderSys(); toast(v ? 'Токен сохранён.' : 'Токен удалён.');
+      cfState(); renderSys(); toast(v ? L('settings.cf.tokenSaved') : L('settings.cf.tokenRemoved'));
     });
 
     // модели агентов
-    const models = el('<div class="sect"><h3>АГЕНТЫ</h3><div class="grid2">' +
-      '<div class="field"><label for="claudeModel">Модель Claude (пусто — по умолчанию)</label><input id="claudeModel" class="input" placeholder="например, opus или sonnet"></div>' +
-      '<div class="field"><label for="codexModel">Модель Codex (пусто — по умолчанию)</label><input id="codexModel" class="input"></div></div>' +
-      '<div class="grid2"><div class="field"><label for="claudeExe">Путь к claude.exe (если не находится сам)</label><input id="claudeExe" class="input" placeholder="найден автоматически"></div>' +
-      '<div class="field"><label for="codexJs">Путь к codex.js (если не находится сам)</label><input id="codexJs" class="input" placeholder="найден автоматически"></div></div></div>');
+    const models = el('<div class="sect"><h3 data-i18n="settings.agents"></h3><div class="grid2">' +
+      '<div class="field"><label for="claudeModel" data-i18n="settings.claudeModel"></label><input id="claudeModel" class="input" data-i18n-placeholder="settings.claudeModelPlaceholder"></div>' +
+      '<div class="field"><label for="codexModel" data-i18n="settings.codexModel"></label><input id="codexModel" class="input"></div></div>' +
+      '<div class="grid2"><div class="field"><label for="claudeExe" data-i18n="settings.claudeExe"></label><input id="claudeExe" class="input" data-i18n-placeholder="settings.foundAutomatically"></div>' +
+      '<div class="field"><label for="codexJs" data-i18n="settings.codexJs"></label><input id="codexJs" class="input" data-i18n-placeholder="settings.foundAutomatically"></div></div></div>');
     body.append(models);
     models.querySelector('#claudeModel').value = s.claude.model || '';
     models.querySelector('#codexModel').value = s.codex.model || '';
@@ -1474,11 +1491,11 @@
     models.querySelector('#codexJs').addEventListener('change', async (e) => { await saveSettings({ codex: Object.assign({}, S.settings.codex, { jsPath: e.target.value.trim() }) }); S.env = await api.checkEnv(); renderSys(); refreshCodex(); });
 
     // приложение
-    const appS = el('<div class="sect"><h3>ПРИЛОЖЕНИЕ</h3>' +
-      '<div class="field"><label for="hotkey">Горячая клавиша вызова Stella (нажмите сочетание)</label><input id="hotkey" class="input" readonly><div class="hint">Работает из любой программы: показывает или прячет окно.</div></div>' +
-      '<label class="check"><input type="checkbox" id="optTray"> При закрытии окна сворачивать в трей</label>' +
-      '<label class="check"><input type="checkbox" id="optAuto"> Запускать Stella вместе с Windows (в трее)</label>' +
-      '<label class="check"><input type="checkbox" id="optNotif"> Уведомления о готовых ответах и запросах подтверждения</label></div>');
+    const appS = el('<div class="sect"><h3 data-i18n="settings.app"></h3>' +
+      '<div class="field"><label for="hotkey" data-i18n="settings.hotkey"></label><input id="hotkey" class="input" readonly><div class="hint" data-i18n="settings.hotkeyHint"></div></div>' +
+      '<label class="check"><input type="checkbox" id="optTray"> <span data-i18n="settings.tray"></span></label>' +
+      '<label class="check"><input type="checkbox" id="optAuto"> <span data-i18n="settings.autostart"></span></label>' +
+      '<label class="check"><input type="checkbox" id="optNotif"> <span data-i18n="settings.notifications"></span></label></div>');
     body.append(appS);
     const hk = appS.querySelector('#hotkey');
     hk.value = s.hotkey || '';
@@ -1489,35 +1506,38 @@
       const parts = [];
       if (e.ctrlKey) parts.push('Control'); if (e.altKey) parts.push('Alt'); if (e.shiftKey) parts.push('Shift'); if (e.metaKey) parts.push('Super');
       let k = e.code.startsWith('Key') ? e.code.slice(3) : e.code.startsWith('Digit') ? e.code.slice(5) : e.code === 'Space' ? 'Space' : /^F\d+$/.test(e.key) ? e.key : e.key.length === 1 ? e.key.toUpperCase() : e.key;
-      if (!parts.length) { toast('Нужен хотя бы один модификатор: Ctrl, Alt или Shift.'); return; }
+      if (!parts.length) { toast(L('settings.hotkeyModifier')); return; }
       parts.push(k);
       hk.value = parts.join('+');
       const r = await saveSettings({ hotkey: hk.value });
-      toast(r.hotkeyOk ? 'Горячая клавиша: ' + hk.value : 'Это сочетание занято другой программой.');
+      toast(r.hotkeyOk ? L('settings.hotkeySet', { hotkey: hk.value }) : L('settings.hotkeyTaken'));
     });
     const bind = (id, key) => { const c = appS.querySelector(id); c.checked = !!s[key]; c.addEventListener('change', () => saveSettings({ [key]: c.checked })); };
     bind('#optTray', 'closeToTray'); bind('#optAuto', 'autostart'); bind('#optNotif', 'notifications');
 
     // навыки
-    const sk = el('<div class="sect"><h3>НАВЫКИ (быстрые задачи для Claude и Codex)</h3><div id="skillRows" class="sect"></div><div><button type="button" class="btn" id="addSkill">+ Добавить навык</button></div></div>');
+    const sk = el('<div class="sect"><h3 data-i18n="settings.skills"></h3><div id="skillRows" class="sect"></div><div><button type="button" class="btn" id="addSkill" data-i18n="settings.addSkill"></button></div></div>');
     body.append(sk);
-    const skills = (s.skills || []).map((x) => Object.assign({}, x));
+    // Built-ins are edited in the current language; editing one turns it into the user's own text.
+    const skills = (s.skills || []).map((x) => Object.assign({}, skillText(x)));
     const saveSkills = () => saveSettings({ skills: skills.filter((x) => x.label.trim() && x.prompt.trim()) }).then(renderSkills);
     const drawSkills = () => {
       const rows = sk.querySelector('#skillRows'); rows.textContent = '';
       skills.forEach((x, i) => {
-        const r = el('<div class="skill-row"><input class="input" aria-label="Название навыка"><textarea class="input" rows="2" aria-label="Текст задачи"></textarea><button type="button" class="del" aria-label="Удалить навык">×</button></div>');
+        const r = el('<div class="skill-row"><input class="input" data-i18n-aria="settings.skillName"><textarea class="input" rows="2" data-i18n-aria="settings.skillPrompt"></textarea><button type="button" class="del" data-i18n-aria="settings.skillDelete">×</button></div>');
         r.children[0].value = x.label; r.children[1].value = x.prompt;
-        r.children[0].addEventListener('change', (e) => { x.label = e.target.value; saveSkills(); });
-        r.children[1].addEventListener('change', (e) => { x.prompt = e.target.value; saveSkills(); });
+        r.children[0].addEventListener('change', (e) => { x.label = e.target.value; delete x.builtin; saveSkills(); });
+        r.children[1].addEventListener('change', (e) => { x.prompt = e.target.value; delete x.builtin; saveSkills(); });
         r.children[2].addEventListener('click', () => { skills.splice(i, 1); saveSkills(); drawSkills(); });
         rows.append(r);
       });
     };
     drawSkills();
-    sk.querySelector('#addSkill').addEventListener('click', () => { skills.push({ label: 'Новый навык', prompt: '' }); drawSkills(); });
+    sk.querySelector('#addSkill').addEventListener('click', () => { skills.push({ label: L('settings.newSkill'), prompt: '' }); drawSkills(); });
 
-    const langSect = el('<div class="sect"><h3>ЯЗЫК</h3><div class="field"><label for="langSel">Язык интерфейса</label><select id="langSel"><option value="ru">Русский</option><option value="en">English</option></select></div></div>');
+    const langSect = el('<div class="sect"><h3 data-i18n="settings.language"></h3><div class="field"><label for="langSel" data-i18n="settings.languageLabel"></label><select id="langSel"><option value="ru" lang="ru"></option><option value="en" lang="en">English</option></select></div></div>');
+    // Language names are endonyms: each is written in its own language.
+    langSect.querySelector('option[value=ru]').textContent = window.stellaLocales.ru['language.name'];
     langSect.querySelector('#langSel').value = I18N.lang;
     langSect.querySelector('#langSel').addEventListener('change', async (e) => {
       await saveSettings({ language: e.target.value });
@@ -1526,17 +1546,16 @@
     });
     body.append(langSect);
 
-    const mem = el('<div class="sect"><h3>ЛОКАЛЬНАЯ ПАМЯТЬ ПРОЕКТА</h3><div class="muted-note"></div><label><input type="checkbox" id="memOn"> Подмешивать заметки в новые чаты</label><textarea id="memText" rows="8" spellcheck="false" style="width:100%"></textarea><div><button type="button" class="btn" id="memSave">Сохранить заметки</button></div></div>');
-    mem.querySelector('.muted-note').textContent = 'Короткие заметки по текущему проекту хранятся только на этом компьютере. Новый чат читает не всю старую переписку, а до ~2000 символов заметок. Кнопка «Перенести в новую сессию» в чате добавляет сюда итоги.';
+    const mem = el('<div class="sect"><h3 data-i18n="settings.memory"></h3><div class="muted-note" data-i18n="settings.memoryHint"></div><label><input type="checkbox" id="memOn"> <span data-i18n="settings.memoryOn"></span></label><textarea id="memText" rows="8" spellcheck="false" style="width:100%"></textarea><div><button type="button" class="btn" id="memSave" data-i18n="settings.memorySave"></button></div></div>');
     mem.querySelector('#memOn').checked = S.settings.memoryEnabled !== false;
     mem.querySelector('#memOn').addEventListener('change', (e) => saveSettings({ memoryEnabled: e.target.checked }));
     api.memoryGet(S.settings.currentProject).then((t) => { mem.querySelector('#memText').value = t; });
-    mem.querySelector('#memSave').addEventListener('click', async () => { await api.memorySet(S.settings.currentProject, mem.querySelector('#memText').value); toast('Заметки сохранены.'); });
+    mem.querySelector('#memSave').addEventListener('click', async () => { await api.memorySet(S.settings.currentProject, mem.querySelector('#memText').value); toast(L('settings.memorySaved')); });
     body.append(mem);
 
-    const about = el('<div class="sect"><h3>О ПРОГРАММЕ</h3><div class="muted-note"></div></div>');
-    about.querySelector('.muted-note').textContent = 'Stella ' + S.env.version + '. Данные чатов хранятся только на этом компьютере. Панель разработчика: Ctrl+Shift+I.';
-    const upd = document.createElement('button'); upd.type = 'button'; upd.className = 'btn'; upd.textContent = 'Проверить обновления';
+    const about = el('<div class="sect"><h3 data-i18n="settings.about"></h3><div class="muted-note"></div></div>');
+    about.querySelector('.muted-note').textContent = L('settings.aboutText', { version: S.env.version });
+    const upd = document.createElement('button'); upd.type = 'button'; upd.className = 'btn'; upd.textContent = L('update.check');
     upd.addEventListener('click', () => api.checkUpdate());
     about.append(upd);
     body.append(about);
@@ -1546,24 +1565,24 @@
   $('openSettings').addEventListener('click', openSettings);
 
   /* ---------- расписание ---------- */
-  const DAYS = [[1, 'Пн'], [2, 'Вт'], [3, 'Ср'], [4, 'Чт'], [5, 'Пт'], [6, 'Сб'], [0, 'Вс']];
+  const DAYS = [1, 2, 3, 4, 5, 6, 0].map((d) => [d, L('day.' + d)]);
   function daysText(days) {
-    if (!days || !days.length || days.length === 7) return 'каждый день';
-    if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d))) return 'по будням';
+    if (!days || !days.length || days.length === 7) return L('tasks.everyDay');
+    if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d))) return L('tasks.weekdays');
     return DAYS.filter(([d]) => days.includes(d)).map(([, l]) => l).join(', ');
   }
   function openTasks(editId) {
     const body = $('tasksBody');
     body.textContent = '';
-    body.append(el('<div class="muted-note">Задачи запускаются автоматически, пока Stella открыта или свёрнута в трей. Включите автозапуск в настройках, чтобы ничего не пропустить. Результат появится отдельным чатом.</div>'));
+    body.append(el('<div class="muted-note" data-i18n="tasks.hint"></div>'));
     const list = el('<div class="sect"></div>');
     body.append(list);
-    if (!S.tasks.length) list.append(el('<div class="muted-note">Пока нет задач.</div>'));
+    if (!S.tasks.length) list.append(el('<div class="muted-note" data-i18n="tasks.empty"></div>'));
     for (const t of S.tasks) {
-      const row = el('<div class="task-item"><label class="check" title="Включена"><input type="checkbox"></label><div class="ti-text"><b></b><small></small></div><button type="button" class="btn">Запустить</button><button type="button" class="btn">Изменить</button><button type="button" class="del" aria-label="Удалить задачу">×</button></div>');
+      const row = el('<div class="task-item"><label class="check" data-i18n-title="tasks.enabled"><input type="checkbox"></label><div class="ti-text"><b></b><small></small></div><button type="button" class="btn" data-i18n="bridge.run"></button><button type="button" class="btn" data-i18n="tasks.edit"></button><button type="button" class="del" data-i18n-aria="tasks.delete">×</button></div>');
       const cb = row.querySelector('input');
       cb.checked = !!t.enabled;
-      cb.setAttribute('aria-label', 'Задача включена');
+      cb.setAttribute('aria-label', L('tasks.enabledAria'));
       cb.addEventListener('change', async () => { t.enabled = cb.checked; S.tasks = await api.saveTasks(S.tasks); });
       row.querySelector('b').textContent = t.name;
       row.querySelector('small').textContent = AGENTS[t.agent].label + ' · ' + t.time + ' · ' + daysText(t.days) + (!isApiChat(t.agent) ? ' · ' + base(t.cwd) : '');
@@ -1576,14 +1595,14 @@
 
     const editing = S.tasks.find((x) => x.id === editId);
     const t = editing ? Object.assign({}, editing) : { id: 't' + Date.now(), name: '', agent: S.agent, cwd: S.settings.currentProject, time: '09:00', days: [1, 2, 3, 4, 5], prompt: '', enabled: true };
-    const form = el('<form class="sect"><h3>' + (editing ? 'ИЗМЕНИТЬ ЗАДАЧУ' : 'НОВАЯ ЗАДАЧА') + '</h3>' +
-      '<div class="grid2"><div class="field"><label for="tkName">Название</label><input id="tkName" class="input" required></div>' +
-      '<div class="field"><label for="tkAgent">Агент</label><select id="tkAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="chatgpt">ChatGPT</option></select></div></div>' +
-      '<div class="grid2"><div class="field"><label for="tkTime">Время</label><input id="tkTime" class="input" type="time" required></div>' +
-      '<div class="field"><label for="tkCwd">Папка проекта</label><select id="tkCwd"></select></div></div>' +
-      '<div class="field"><span class="lbl">Дни</span><div class="days" id="tkDays"></div></div>' +
-      '<div class="field"><label for="tkPrompt">Что сделать</label><textarea id="tkPrompt" class="input" rows="4" required></textarea><div class="hint">Для задач Claude в режиме «Спрашивать разрешение» Stella пришлёт уведомление, когда понадобится подтверждение.</div></div>' +
-      '<div class="row"><button type="submit" class="btn accent">' + (editing ? 'Сохранить' : 'Добавить задачу') + '</button>' + (editing ? '<button type="button" class="btn" id="tkCancel">Отмена</button>' : '') + '</div></form>');
+    const form = el('<form class="sect"><h3 data-i18n="' + (editing ? 'tasks.editTitle' : 'tasks.newTitle') + '"></h3>' +
+      '<div class="grid2"><div class="field"><label for="tkName" data-i18n="tasks.name"></label><input id="tkName" class="input" required></div>' +
+      '<div class="field"><label for="tkAgent" data-i18n="composer.agent"></label><select id="tkAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="chatgpt">ChatGPT</option></select></div></div>' +
+      '<div class="grid2"><div class="field"><label for="tkTime" data-i18n="tasks.time"></label><input id="tkTime" class="input" type="time" required></div>' +
+      '<div class="field"><label for="tkCwd" data-i18n="dialog.projectFolder"></label><select id="tkCwd"></select></div></div>' +
+      '<div class="field"><span class="lbl" data-i18n="tasks.days"></span><div class="days" id="tkDays"></div></div>' +
+      '<div class="field"><label for="tkPrompt" data-i18n="tasks.prompt"></label><textarea id="tkPrompt" class="input" rows="4" required></textarea><div class="hint" data-i18n="tasks.promptHint"></div></div>' +
+      '<div class="row"><button type="submit" class="btn accent" data-i18n="' + (editing ? 'common.save' : 'tasks.add') + '"></button>' + (editing ? '<button type="button" class="btn" id="tkCancel" data-i18n="common.cancel"></button>' : '') + '</div></form>');
     body.append(form);
     form.querySelector('#tkName').value = t.name;
     form.querySelector('#tkAgent').value = t.agent;
@@ -1593,7 +1612,7 @@
     for (const p of S.settings.projects) { const o = document.createElement('option'); o.value = p; o.textContent = p; if (p === t.cwd) o.selected = true; cwdSel.append(o); }
     const daysBox = form.querySelector('#tkDays');
     for (const [d, l] of DAYS) {
-      const lab = el('<label><input type="checkbox"> ' + l + '</label>');
+      const lab = el('<label><input type="checkbox"> <span></span></label>'); lab.lastChild.textContent = l;
       lab.firstChild.checked = t.days.includes(d);
       lab.firstChild.addEventListener('change', (e) => { if (e.target.checked) t.days.push(d); else t.days = t.days.filter((x) => x !== d); });
       daysBox.append(lab);
@@ -1609,7 +1628,7 @@
       if (!t.name || !t.prompt || !t.time) return;
       const next = editing ? S.tasks.map((x) => (x.id === t.id ? t : x)) : S.tasks.concat([t]);
       S.tasks = await api.saveTasks(next);
-      toast(editing ? 'Задача сохранена.' : 'Задача добавлена.');
+      toast(editing ? L('tasks.saved') : L('tasks.added'));
       openTasks();
     });
     openModal('tasksModal');
@@ -1656,7 +1675,7 @@
     if (!u) return;
     updReady = u;
     const b = $('checkUpdateBtn');
-    b.lastChild.textContent = 'Перезапустить для обновления до ' + u.version;
+    b.lastChild.textContent = L('update.restartTo', { version: u.version });
     b.style.color = 'var(--accent, #7cf)';
   }
   api.onUpdateReady(showUpdateReady);
@@ -1664,11 +1683,11 @@
   $('checkUpdateBtn').addEventListener('click', () => (updReady ? api.installUpdate() : api.checkUpdate()));
   $('transferBtn').addEventListener('click', async () => {
     if (!S.chat) return;
-    if (S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) { toast('Дождитесь ответа агента или нажмите «Стоп».'); return; }
+    if (S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) { toast(L('chat.waitOrStop')); return; }
     const c = await api.transferChat(S.chat.id);
-    if (!c) { toast('В чате пока нечего переносить.'); return; }
+    if (!c) { toast(L('chat.nothingToTransfer')); return; }
     await openChat(c.id);
-    toast('Создана новая сессия с сжатым контекстом (локально, без расхода токенов).');
+    toast(L('chat.transferred'));
     $('input').focus();
   });
   api.onNewChat(() => openDraft());

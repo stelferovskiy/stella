@@ -6,6 +6,9 @@ const on = (channel) => (cb) => {
   return () => ipcRenderer.removeListener(channel, h);
 };
 
+// Locale dictionaries for the renderer translator (src/renderer/i18n.js).
+contextBridge.exposeInMainWorld('stellaLocales', { ru: require('./src/locales/ru.json'), en: require('./src/locales/en.json') });
+
 contextBridge.exposeInMainWorld('stella', {
   init: () => ipcRenderer.invoke('app:init'),
   checkEnv: () => ipcRenderer.invoke('env:check'),
