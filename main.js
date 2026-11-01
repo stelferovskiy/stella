@@ -10,6 +10,7 @@ const claudeProvider = require('./src/main/providers/claude');
 const codexProvider = require('./src/main/providers/codex');
 const openaiProvider = require('./src/main/providers/openai');
 const { createImages } = require('./src/main/images');
+const { createGptImages } = require('./src/main/gpt-images');
 const { createI18n } = require('./src/main/i18n');
 const { createPlugins } = require('./src/main/plugins');
 const { createMemory } = require('./src/main/memory');
@@ -21,7 +22,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 let win = null;
 let tray = null;
 let quitting = false;
-let tr = (s) => s, plugins, memory, store, runner, scheduler, terms, images, updater;
+let tr = (s) => s, plugins, memory, store, runner, scheduler, terms, images, gptImages, updater;
 const startHidden = process.argv.includes('--hidden');
 const ICON = path.join(__dirname, 'src', 'assets', 'icon.png');
 const ICON_ICO = path.join(__dirname, 'src', 'assets', 'icon.ico');
@@ -194,7 +195,29 @@ function wireIpc() {
     catch (err) { return { ok: false, error: String(err && err.message || err), code: err && err.code }; }
   });
   ipcMain.handle('images:delete', (_e, id) => ({ items: images.remove(id), stats: images.stats() }));
+  ipcMain.handle('gpt-images:list', async () => {
+    try { const availability = await gptImages.availability(); return { ...gptImages.list(), ...availability }; }
+    catch (err) { return { ...gptImages.list(), error: err.message, code: err.action || err.code || 'unavailable' }; }
+  });
+  ipcMain.handle('gpt-images:generate', async (_e, opts) => {
+    try { return { ok: true, item: await gptImages.generate(opts || {}) }; }
+    catch (err) { return { ok: false, error: err.message, code: err.action || err.code || 'generation-failed' }; }
+  });
+  ipcMain.handle('gpt-images:stop', () => gptImages.stop());
+  ipcMain.handle('gpt-images:status', () => gptImages.status());
+  ipcMain.handle('gpt-images:delete', (_e, id) => ({ items: gptImages.remove(id) }));
+  ipcMain.handle('gpt-images:save', async (_e, id) => {
+    try {
+      const item = gptImages.get(id), ext = path.extname(item.file);
+      const r = await dialog.showSaveDialog(win, { title: 'Сохранить изображение', defaultPath: path.join(app.getPath('pictures'), 'Stella-' + item.id.slice(0, 8) + ext), filters: [{ name: 'Image', extensions: [ext.slice(1)] }] });
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+      if (path.resolve(item.file) !== path.resolve(r.filePath)) fs.copyFileSync(item.file, r.filePath);
+      return { ok: true };
+    } catch (err) { return { ok: false, error: err.message }; }
+  });
   ipcMain.handle('chatgpt:models', async () => openaiProvider.listModels(getApiKey()));
+  ipcMain.handle('codex:models', async () => codexProvider.listModels(store.getSettings()));
+  ipcMain.handle('codex:account', async () => codexProvider.getAccount(store.getSettings()));
 
   ipcMain.handle('project:pick', async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'], title: tr('Папка проекта') });
@@ -239,6 +262,7 @@ function wireIpc() {
   ipcMain.handle('chat:send', (_e, id, payload) => { runner.send(id, payload || {}).catch((err) => broadcast('toast', String(err.message || err))); return true; });
   ipcMain.handle('chat:stop', (_e, id) => { runner.stop(id); return true; });
   ipcMain.handle('chat:approve', (_e, id, reqId, answer) => runner.approve(id, reqId, answer));
+  ipcMain.handle('chat:answerInput', (_e, id, reqId, answers) => runner.answerInput(id, reqId, answers));
 
   ipcMain.handle('files:pick', async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], title: tr('Прикрепить файлы') });
@@ -281,6 +305,7 @@ app.whenReady().then(() => {
   scheduler = createScheduler({ store, runner, broadcast, notify });
   terms = createTerminals({ broadcast });
   images = createImages({ store, getCreds: getCfCreds });
+  gptImages = createGptImages({ store, broadcast });
   wireIpc();
   createWindow();
   createTray();
@@ -288,7 +313,7 @@ app.whenReady().then(() => {
   if (!registerHotkey(s.hotkey)) broadcast('toast', 'Не удалось назначить горячую клавишу ' + s.hotkey);
   applyAutostart(s.autostart);
   scheduler.start();
-  updater = createUpdater({ app, dialog, getWindow: () => win, broadcast, canInstall: () => !Object.values(runner.states()).some((s) => s && !['idle', 'error'].includes(s)), beforeInstall: () => { quitting = true; } });
+  updater = createUpdater({ app, dialog, getWindow: () => win, broadcast, canInstall: () => !gptImages.status().active && !Object.values(runner.states()).some((s) => s && !['idle', 'error'].includes(s)), beforeInstall: () => { quitting = true; } });
   if (app.isPackaged) { setTimeout(() => updater.check({ silent: true }), 15000); setInterval(() => updater.check({ silent: true }), 6 * 3600 * 1000); }
   ipcMain.handle('update:check', () => updater.check({ silent: false }));
   ipcMain.handle('update:install', () => updater.installNow());
@@ -324,7 +349,7 @@ async function pollClaudeLimits() {
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
-  try { runner.stopAll(); terms.killAll(); scheduler.stop(); } catch (e) {}
+  try { runner.stopAll(); gptImages.stop(); terms.killAll(); scheduler.stop(); } catch (e) {}
   try { updater && updater.installOnQuit(); } catch (e) {}
 });
 app.on('window-all-closed', () => { quitting = true; app.quit(); });

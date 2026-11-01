@@ -64,8 +64,8 @@ function createUpdater({ app, dialog, getWindow, broadcast, canInstall, beforeIn
     };
     try {
       const info = await fetchInfo();
-      // «Отличается», а не «больше»: нумерация версий могла быть пересмотрена (2.5.0 -> 1.5.0).
-      if (info.version === app.getVersion()) {
+      // Local preview builds must not downgrade to an older public release.
+      if (!newer(info.version, app.getVersion())) {
         if (!silent) await box({ type: 'info', message: 'Установлена последняя версия (' + app.getVersion() + ').', buttons: ['OK'] });
         return;
       }

@@ -8,6 +8,17 @@
   let lang = (function () { try { return localStorage.getItem(KEY) || sys; } catch (e) { return sys; } })();
 
   const PAIRS = [
+    ['Основной лимит', 'Primary limit'], ['Дополнительный лимит', 'Additional limit'],
+    ['● ЛИМИТЫ', '● LIMITS'], ['ЛИМИТЫ', 'LIMITS'],
+    ['Лимиты аккаунта пока недоступны.', 'Account limits are not available yet.'],
+    ['Лимиты подписки недоступны для API.', 'Subscription limits are unavailable for API access.'],
+    ['Каталог моделей недоступен', 'Model catalog unavailable'],
+    ['Выбранная модель недоступна в каталоге', 'Selected model is unavailable in the catalog'],
+    ['Уровень размышлений не поддерживается моделью', 'Reasoning effort is unsupported by this model'],
+    ['Авто', 'Auto'], ['Другой ответ', 'Other answer'], ['Отправить ответ', 'Send answer'],
+    ['Ответьте на все вопросы', 'Answer all questions'], ['Ответ отправлен', 'Answer sent'],
+    ['Не удалось отправить ответ', 'Failed to send answer'], ['Аккаунт подключён', 'Account connected'],
+    ['Требуется вход', 'Sign-in required'], ['Авторизация не требуется', 'Authentication not required'],
     // шапка, вкладки, режимы
     ['ЯДРО STELLA · CLAUDE CODE', 'STELLA CORE · CLAUDE CODE'], ['ЯДРО STELLA · OPENAI CODEX', 'STELLA CORE · OPENAI CODEX'], ['ЯДРО STELLA · ЧАТ-АССИСТЕНТ', 'STELLA CORE · CHAT ASSISTANT'],
     ['СТУДИЯ', 'STUDIO'], ['Студия', 'Studio'], ['ТВОЙ КОМАНДНЫЙ ЦЕНТР', 'YOUR COMMAND CENTER'], ['Мостик', 'Bridge'], ['ПРОЕКТ', 'PROJECT'], ['Папка', 'Folder'],

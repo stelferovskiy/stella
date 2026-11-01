@@ -4,3 +4,4 @@ dist/
 build-log.txt
 .DS_Store
 Thumbs.db
+.i18n-work/

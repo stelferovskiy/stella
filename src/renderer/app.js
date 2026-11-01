@@ -33,7 +33,8 @@
     attachments: [],
     open: new Set(),
     search: '',
-    studio: false
+    studio: false,
+    gptImages: false
   };
   if (init.env && init.env.version) $('appVersion').textContent = '/ v' + init.env.version;
 
@@ -56,6 +57,7 @@
   async function saveSettings(patch) {
     const r = await api.saveSettings(patch);
     S.settings = r.settings;
+    renderModelSelects();
     return r;
   }
 
@@ -89,25 +91,26 @@
   /* ---------- тема агента ---------- */
   function viewAgent() { return S.chat ? S.chat.agent : S.agent; }
   function applyTheme() {
-    const a = S.studio ? AGENTS.images : AGENTS[viewAgent()];
+    const a = S.gptImages ? { ...AGENTS.chatgpt, name: "GPT IMAGES", sub: "CHATGPT · CODEX" } : S.studio ? AGENTS.images : AGENTS[viewAgent()];
     const root = document.documentElement.style;
     root.setProperty('--accent', a.color);
     root.setProperty('--accent-rgb', a.rgb);
     root.setProperty('--glow', a.glow);
     orbBig.setColor(a.color); orbMini.setColor(a.color);
-    document.querySelectorAll('.tab[data-agent]').forEach((b) => b.classList.toggle('on', S.studio ? b.dataset.agent === 'images' : b.dataset.agent === viewAgent()));
+    document.querySelectorAll('.tab[data-agent]').forEach((b) => b.classList.toggle('on', S.gptImages ? b.dataset.agent === 'gpt-images' : S.studio ? b.dataset.agent === 'images' : b.dataset.agent === viewAgent()));
     if (orbStudio) orbStudio.setColor(AGENTS.images.color);
     $('heroName').textContent = a.name;
     $('heroSub').textContent = a.sub;
-    $('input').placeholder = viewAgent() === 'chatgpt' ? 'Спроси что угодно…' : 'Спроси или дай задачу для папки проекта…';
+    $('input').placeholder = isApiChat(viewAgent()) ? 'Спроси что угодно…' : 'Спроси или дай задачу для папки проекта…';
     renderModeSelect();
     renderModelSelects();
+    renderLimits();
   }
   function renderModeSelect() {
     const agent = viewAgent();
     const sel = $('modeSelect');
     sel.textContent = '';
-    if (agent === 'chatgpt') {
+    if (agent === 'chatgpt' && S.settings.chatgpt.backend === 'api') {
       const o = document.createElement('option');
       o.textContent = S.settings.chatgpt.backend === 'api' ? 'Через API-ключ' : 'Через аккаунт ChatGPT';
       sel.append(o);
@@ -115,8 +118,8 @@
       return;
     }
     sel.disabled = false;
-    const cur = agent === 'claude' ? S.settings.claude.permissionMode : S.settings.codex.sandbox;
-    for (const [v, l] of MODES[agent]) {
+    const cur = agent === 'claude' ? S.settings.claude.permissionMode : (S.settings[agent].sandbox || 'workspace-write');
+    for (const [v, l] of MODES[agent === 'chatgpt' ? 'codex' : agent]) {
       const o = document.createElement('option');
       o.value = v; o.textContent = l; if (v === cur) o.selected = true;
       sel.append(o);
@@ -125,7 +128,7 @@
   $('modeSelect').addEventListener('change', async (e) => {
     const v = e.target.value;
     if (viewAgent() === 'claude') await saveSettings({ claude: Object.assign({}, S.settings.claude, { permissionMode: v }) });
-    else if (viewAgent() === 'codex') await saveSettings({ codex: Object.assign({}, S.settings.codex, { sandbox: v }) });
+    else { const a = viewAgent(); await saveSettings({ [a]: Object.assign({}, S.settings[a], { sandbox: v }) }); }
     if (v === 'bypassPermissions' || v === 'danger-full-access') toast('Полный доступ: агент будет выполнять любые действия без подтверждения.', 5000);
   });
 
@@ -146,14 +149,56 @@
     const all = cur && !vals.includes(cur) ? list.concat([[cur, cur]]) : list;
     for (const [v, l] of all) { const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === (cur || '')) o.selected = true; sel.append(o); }
   }
+  let codexCatalog = null;
+  let catalogError = '';
+  let codexAccount = null;
+  let catalogRequest = 0;
+  function isApiChat(agent) { return agent === 'chatgpt' && S.settings.chatgpt.backend === 'api'; }
+  function usesCodex(agent) { return agent === 'codex' || (agent === 'chatgpt' && S.settings.chatgpt.backend !== 'api'); }
+  async function refreshCodex() {
+    const request = ++catalogRequest;
+    const results = await Promise.allSettled([api.codexModels(), api.codexAccount()]);
+    if (request !== catalogRequest) return;
+    if (results[0].status === 'fulfilled' && Array.isArray(results[0].value)) {
+      codexCatalog = results[0].value; catalogError = '';
+    } else { codexCatalog = null; catalogError = 'Каталог моделей недоступен'; }
+    codexAccount = results[1].status === 'fulfilled' ? Object.assign({ at: Date.now() }, results[1].value) : null;
+    renderModelSelects(); renderSys(); renderLimits();
+  }
   function renderModelSelects() {
     const agent = viewAgent();
     const L = MODEL_LISTS[agent];
+    if (!L) return;
     const cfg = S.settings[agent] || {};
-    fillSelect($('modelSelect'), L.models, cfg[modelKey(agent)] || '');
-    fillSelect($('effortSelect'), L.efforts, cfg.effort || '');
+    const selected = cfg[modelKey(agent)] || '';
+    const dynamic = usesCodex(agent);
+    const catalog = codexCatalog || [];
+    const models = dynamic ? [['', 'Модель: авто']].concat(catalog.map((m) => [m.model || m.id, m.displayName || m.model || m.id])) : L.models;
+    const model = selected ? catalog.find((m) => (m.model || m.id) === selected) : catalog.find((m) => m.isDefault) || catalog[0];
+    const efforts = dynamic ? [EFFORT_OFF].concat((model && model.supportedReasoningEfforts || []).map((e) => [e.reasoningEffort, e.reasoningEffort])) : L.efforts;
+    fillSelect($('modelSelect'), models, selected);
+    fillSelect($('effortSelect'), efforts, cfg.effort || '');
+    $('effortSelect').title = model && model.defaultReasoningEffort ? 'Auto: ' + model.defaultReasoningEffort : '';
+    let warning = $('codexModelWarning');
+    if (!warning) {
+      warning = document.createElement('div'); warning.id = 'codexModelWarning'; warning.className = 'catalog-warning'; warning.setAttribute('role', 'status');
+      $('modelSelect').parentElement.after(warning);
+    }
+    warning.textContent = '';
+    const unsupported = dynamic && codexCatalog !== null && selected && !model;
+    const unsupportedEffort = dynamic && codexCatalog !== null && cfg.effort && !efforts.some((e) => e[0] === cfg.effort);
+    warning.hidden = !dynamic || (!unsupported && !unsupportedEffort && !catalogError);
+    if (!warning.hidden) {
+      const note = document.createElement('span');
+      note.textContent = catalogError || (unsupported ? 'Выбранная модель недоступна в каталоге' : 'Уровень размышлений не поддерживается моделью');
+      warning.append(note);
+      const auto = document.createElement('button'); auto.type = 'button'; auto.className = 'mini-btn'; auto.textContent = 'Авто';
+      auto.onclick = async () => { await saveSettings({ [agent]: Object.assign({}, S.settings[agent], unsupportedEffort && !unsupported ? { effort: '' } : { [modelKey(agent)]: '', effort: '' }) }); };
+      warning.append(auto);
+      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'mini-btn'; retry.textContent = 'Обновить'; retry.onclick = refreshCodex; warning.append(retry);
+    }
   }
-  $('modelSelect').addEventListener('change', (e) => { const a = viewAgent(); saveSettings({ [a]: Object.assign({}, S.settings[a], { [modelKey(a)]: e.target.value }) }); });
+  $('modelSelect').addEventListener('change', async (e) => { const a = viewAgent(); await saveSettings({ [a]: Object.assign({}, S.settings[a], { [modelKey(a)]: e.target.value }) }); });
   $('effortSelect').addEventListener('change', (e) => { const a = viewAgent(); saveSettings({ [a]: Object.assign({}, S.settings[a], { effort: e.target.value }) }); });
 
   /* ---------- плагины ---------- */
@@ -272,8 +317,9 @@
   $('openPlugins').addEventListener('click', openPlugins);
 
   document.querySelectorAll('.tab[data-agent]').forEach((b) => b.addEventListener('click', async () => {
+    if (b.dataset.agent === 'gpt-images') { window.StellaGptImages?.open(); return; }
     if (b.dataset.agent === 'images') { openStudio(); return; }
-    if (S.studio) { S.studio = false; S.agent = b.dataset.agent; saveSettings({ agent: S.agent }); openDraft(); return; }
+    if (S.studio || S.gptImages) { S.studio = false; S.gptImages = false; S.agent = b.dataset.agent; saveSettings({ agent: S.agent }); openDraft(); return; }
     S.agent = b.dataset.agent;
     saveSettings({ agent: S.agent });
     if (S.chat && S.chat.agent !== S.agent) openDraft();
@@ -344,7 +390,7 @@
     list.textContent = '';
     const q = S.search.trim().toLowerCase();
     const items = S.chats
-      .filter((c) => S.settings.showAllProjects || q || c.cwd === S.settings.currentProject || c.agent === 'chatgpt')
+      .filter((c) => S.settings.showAllProjects || q || c.cwd === S.settings.currentProject || isApiChat(c.agent))
       .filter((c) => !q || (c.title + ' ' + (c.snippet || '')).toLowerCase().includes(q))
       .sort((a, b) => b.updated - a.updated);
     if (!items.length) {
@@ -369,7 +415,7 @@
       row.innerHTML = '<span class="dot' + (running ? ' running' : '') + '"></span><span class="ci-text"><span class="ci-title"></span><span class="ci-sub"></span></span><button type="button" class="ci-del" aria-label="Удалить чат">×</button>';
       row.querySelector('.dot').style.background = st === 'waiting' ? 'var(--warn)' : AGENTS[c.agent].color;
       row.querySelector('.ci-title').textContent = c.title;
-      row.querySelector('.ci-sub').textContent = AGENTS[c.agent].label + ' · ' + hhmm(c.updated) + (S.settings.showAllProjects && c.agent !== 'chatgpt' ? ' · ' + base(c.cwd) : '');
+      row.querySelector('.ci-sub').textContent = AGENTS[c.agent].label + ' · ' + hhmm(c.updated) + (S.settings.showAllProjects && !isApiChat(c.agent) ? ' · ' + base(c.cwd) : '');
       row.addEventListener('click', (e) => { if (!e.target.closest('.ci-del')) openChat(c.id); });
       row.addEventListener('keydown', (e) => { if (e.key === 'Enter') openChat(c.id); });
       const del = row.querySelector('.ci-del');
@@ -392,16 +438,25 @@
   /* ---------- открытие чатов ---------- */
   const viewListeners = [];
   function viewChanged() { $('bridge').hidden = true; viewListeners.forEach((f) => f()); }
-  function hideViews() { $('hero').hidden = true; $('chatView').hidden = true; $('composer').hidden = true; $('studio').hidden = true; }
+  function hideViews() { $('hero').hidden = true; $('chatView').hidden = true; $('composer').hidden = true; $('studio').hidden = true; $('gptImages').hidden = true; }
   function showHero(on) {
     viewChanged();
+    $('gptImages').hidden = true;
     $('studio').hidden = true;
     $('composer').hidden = false;
     $('hero').hidden = !on;
     $('chatView').hidden = on;
   }
+  let chatNavigation = 0;
+  function clearInputForms() {
+    $('messages').querySelectorAll('[data-input-req]').forEach((form) => form.reset());
+  }
   function openDraft() {
+    ++chatNavigation;
+    clearInputForms();
+    $('messages').textContent = '';
     S.studio = false;
+    S.gptImages = false;
     S.chat = null;
     S.attachments = [];
     renderAttachments();
@@ -414,16 +469,19 @@
     $('input').focus();
   }
   async function openChat(id) {
+    const navigation = ++chatNavigation;
     const c = await api.getChat(id);
-    if (!c) return;
+    if (!c || navigation !== chatNavigation) return;
+    clearInputForms();
     S.studio = false;
+    S.gptImages = false;
     S.chat = c;
     S.agent = c.agent;
     applyTheme();
     showHero(false);
     $('chatTitle').textContent = c.title;
     $('chatAgent').textContent = AGENTS[c.agent].label.toUpperCase();
-    $('chatCwd').textContent = c.agent === 'chatgpt' ? '' : c.cwd;
+    $('chatCwd').textContent = isApiChat(c.agent) ? '' : c.cwd;
     renderMessages(true);
     renderChatList();
     renderFiles();
@@ -456,7 +514,7 @@
   function renderSkills() {
     const box = $('skills');
     box.textContent = '';
-    const skills = viewAgent() === 'chatgpt'
+    const skills = isApiChat(viewAgent())
       ? [{ label: 'Объясни простыми словами', prompt: 'Объясни простыми словами: ' }, { label: 'Улучши текст', prompt: 'Улучши этот текст, сохрани смысл:\n\n' }, { label: 'Переведи на английский', prompt: 'Переведи на английский:\n\n' }, { label: 'Идеи', prompt: 'Предложи 10 идей для ' }]
       : (S.settings.skills || []);
     for (const s of skills) {
@@ -529,6 +587,15 @@
       return '<details class="tool ' + b.status + '" data-open="' + esc(k) + '"' + (S.open.has(k) ? ' open' : '') + '><summary><span class="t-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="' + ico + '"/></svg></span><span class="t-title">' + esc(b.title || b.name) + '</span><span class="t-st">' + (ST_LABEL[b.status] || '') + '</span></summary><div class="t-body">' +
         (b.detail ? '<pre>' + esc(b.detail) + '</pre>' : '') + (b.output ? '<pre>' + esc(b.output) + '</pre>' : '') + (!b.detail && !b.output ? '<div class="muted-note">Нет подробностей.</div>' : '') + '</div></details>';
     }
+    if (b.type === 'user-input') {
+      if (b.status !== 'pending' || msg.status !== 'running') return '<div class="approval resolved">' + (b.status === 'resolved' ? 'Ответ отправлен' : 'Запрос устарел') + '</div>';
+      return '<form class="approval input-request" data-input-req="' + esc(b.key) + '" data-input-chat="' + esc(S.chat.id) + '" data-input-msg="' + esc(msg.id) + '">' + (b.questions || []).map((q, i) => {
+        const options = q.isSecret ? [] : (q.options || []);
+        return '<fieldset data-question="' + i + '"><legend>' + esc(q.header || q.question) + '</legend><p>' + esc(q.question) + '</p>' + options.map((o, j) => '<label class="input-option"><input type="radio" name="q' + i + '" value="' + j + '"><span>' + esc(o.label) + (o.description ? '<small>' + esc(o.description) + '</small>' : '') + '</span></label>').join('') +
+          (options.length && q.isOther ? '<label class="input-option"><input type="radio" name="q' + i + '" value="other">Другой ответ</label>' : '') +
+          (!options.length || q.isOther ? '<input class="input" data-free type="' + (q.isSecret ? 'password' : 'text') + '" autocomplete="off" aria-label="' + esc(q.question) + '">' : '') + '</fieldset>';
+      }).join('') + '<button class="btn accent" type="submit">Отправить ответ</button><div class="input-error" role="alert"></div></form>';
+    }
     if (b.type === 'approval') {
       const pending = b.status === 'pending';
       const st = { allowed: 'Разрешено', always: 'Разрешено до конца сессии', denied: 'Отклонено', expired: 'Запрос устарел' }[b.status] || '';
@@ -559,7 +626,19 @@
       html += '<div class="ai-foot"><button type="button" class="mini-btn" data-copy="1">Копировать</button>' +
         (u ? '<span class="meta">' + fmtNum(u.input) + ' вход · ' + fmtNum(u.output) + ' выход' + (u.cost ? ' · $' + u.cost.toFixed(3) : '') + '</span>' : '') + '</div>';
     }
+    const forms = [...el.querySelectorAll('[data-input-req]')];
+    const focused = document.activeElement;
+    const selection = focused && focused.tagName === 'INPUT' ? [focused.selectionStart, focused.selectionEnd] : null;
     el.innerHTML = html;
+    for (const form of forms) {
+      const replacement = [...el.querySelectorAll('[data-input-req]')].find((n) => n.dataset.inputReq === form.dataset.inputReq && n.dataset.inputChat === form.dataset.inputChat && n.dataset.inputMsg === form.dataset.inputMsg);
+      if (replacement) { replacement.replaceWith(form); if (form.contains(focused)) { focused.focus(); if (selection && selection[0] != null) focused.setSelectionRange(...selection); } }
+      else form.reset();
+    }
+    el.querySelectorAll('[data-input-req]').forEach((form) => {
+      const pending = inputSends.has(JSON.stringify([form.dataset.inputChat, form.dataset.inputMsg, form.dataset.inputReq]));
+      form.querySelectorAll('input, button').forEach((n) => { n.disabled = pending; });
+    });
   }
 
   function nearBottom() { const m = $('messages'); return m.scrollHeight - m.scrollTop - m.clientHeight < 140; }
@@ -597,6 +676,55 @@
     const d = e.target;
     if (d.dataset && d.dataset.open) { if (d.open) S.open.add(d.dataset.open); else S.open.delete(d.dataset.open); }
   }, true);
+
+  const inputSends = new Set();
+  $('messages').addEventListener('submit', async (e) => {
+    const form = e.target.closest('[data-input-req]');
+    if (!form) return;
+    e.preventDefault();
+    const chat = S.chat;
+    const message = chat && String(chat.id) === form.dataset.inputChat && chat.messages.find((m) => String(m.id) === form.dataset.inputMsg);
+    const block = message && message.blocks.find((b) => b.type === 'user-input' && String(b.key) === form.dataset.inputReq);
+    const key = chat && JSON.stringify([String(chat.id), String(message && message.id), form.dataset.inputReq]);
+    if (!block || block.status !== 'pending' || message.status !== 'running' || inputSends.has(key)) return;
+    const answers = Object.create(null);
+    for (const [i, q] of block.questions.entries()) {
+      const field = form.querySelector('[data-question="' + i + '"]');
+      const option = field.querySelector('input[type=radio]:checked');
+      const free = field.querySelector('[data-free]');
+      const value = option && option.value !== 'other' ? q.options[Number(option.value)].label : free && (!q.options || !q.options.length || q.isSecret || option) ? free.value : '';
+      if (!value || !value.trim()) {
+        if (q.required === false) continue;
+        form.querySelector('.input-error').textContent = 'Ответьте на все вопросы'; return;
+      }
+      answers[q.id] = { answers: [value] };
+    }
+    inputSends.add(key);
+    form.querySelectorAll('input, button').forEach((n) => { n.disabled = true; });
+    const currentRequest = () => {
+      const m = S.chat && S.chat.id === chat.id && S.chat.messages.find((m) => m.id === message.id);
+      return m && { message: m, block: m.blocks.find((b) => b.type === 'user-input' && String(b.key) === form.dataset.inputReq) };
+    };
+    try {
+      const result = await api.answerInput(chat.id, block.key, answers);
+      if (result === false || result && result.ok === false) throw new Error(result.error || 'Не удалось отправить ответ');
+      if (block.status === 'pending') block.status = 'resolved';
+      form.reset();
+      const active = currentRequest();
+      if (active && active.block && active.block.status === 'pending') active.block.status = block.status;
+      if (active) scheduleUpdate(message.id);
+    } catch (err) {
+      inputSends.delete(key);
+      if (block.status === 'pending' && message.status === 'running' && form.isConnected) {
+        form.querySelectorAll('input, button').forEach((n) => { n.disabled = false; });
+        form.querySelector('.input-error').textContent = err.message;
+      }
+    } finally {
+      inputSends.delete(key);
+      const active = currentRequest();
+      if (active) scheduleUpdate(active.message.id);
+    }
+  });
 
   $('messages').addEventListener('click', async (e) => {
     const ap = e.target.closest('[data-ap]');
@@ -665,12 +793,12 @@
       showHero(false);
       $('chatTitle').textContent = c.title;
       $('chatAgent').textContent = AGENTS[c.agent].label.toUpperCase();
-      $('chatCwd').textContent = c.agent === 'chatgpt' ? '' : c.cwd;
+      $('chatCwd').textContent = isApiChat(c.agent) ? '' : c.cwd;
       renderMessages(false);
     } else showHero(false);
     $('input').value = ''; autosize();
     S.attachments = []; renderAttachments();
-    const mode = S.chat.agent === 'claude' ? S.settings.claude.permissionMode : S.chat.agent === 'codex' ? S.settings.codex.sandbox : undefined;
+    const mode = S.chat.agent === 'claude' ? S.settings.claude.permissionMode : usesCodex(S.chat.agent) ? (S.settings[S.chat.agent].sandbox || 'workspace-write') : undefined;
     S.states[S.chat.id] = 'thinking';
     updateOrbs();
     await api.send(S.chat.id, { text, attachments: atts.map((a) => ({ name: a.name, path: a.path, data: a.data, mime: a.mime })), mode });
@@ -741,6 +869,7 @@
     const collapsed = new Set(S.settings.hudCollapsed || []);
     [...hud.querySelectorAll(':scope > .hud-label')].forEach((label) => {
       const key = label.textContent.replace('●', '').trim();
+      if ((key === 'ЛИМИТЫ' || key === 'LIMITS') && (collapsed.has('ЛИМИТЫ CLAUDE') || collapsed.has('CLAUDE LIMITS'))) { collapsed.delete('ЛИМИТЫ CLAUDE'); collapsed.delete('CLAUDE LIMITS'); collapsed.add(key); }
       const body = document.createElement('div');
       body.className = 'hud-body';
       let n = label.nextElementSibling;
@@ -759,6 +888,14 @@
 
   function renderSys() {
     const box = $('sysList');
+    let account = $('codexAccountStatus');
+    if (!account) { account = document.createElement('div'); account.id = 'codexAccountStatus'; account.className = 'muted-note codex-account'; box.after(account); }
+    account.textContent = '';
+    if (codexAccount) {
+      const a = codexAccount.account;
+      const title = document.createElement('div'); title.textContent = a ? 'ChatGPT · ' + (a.email || a.planType || a.type || 'Аккаунт подключён') : codexAccount.requiresOpenaiAuth ? 'ChatGPT · Требуется вход' : 'Codex · Авторизация не требуется'; account.append(title);
+
+    }
     box.textContent = '';
     const rows = [
       { key: 'claude', ok: !!(S.env.claudeExe && S.env.claudeSdk), status: !S.env.claudeExe ? 'НЕ НАЙДЕН' : !S.env.claudeSdk ? 'НУЖЕН SDK' : 'УСТАНОВЛЕН', actions: !S.env.claudeExe ? [['install-claude', 'Установить']] : !S.env.claudeSdk ? [['install-sdk', 'Установить SDK'], ['login-claude', 'Войти']] : [['login-claude', 'Войти / сменить аккаунт']] },
@@ -787,13 +924,73 @@
     }
   }
 
+  function accountLimits(agent) {
+    if (!usesCodex(agent) && !S.gptImages) return null;
+    const limits = S.usage && S.usage.limits || {};
+    // Both clients consume the same account quota; either stream can update it.
+    const snapshots = [limits[agent] && limits[agent].account, limits[agent === 'codex' ? 'chatgpt' : 'codex']?.account, codexAccount && codexAccount.rateLimits ? codexAccount : null]
+      .filter(Boolean)
+      .sort((a, b) => (b.at || 0) - (a.at || 0));
+    if (snapshots.length) return snapshots[0].rateLimits || snapshots[0];
+    return codexAccount && codexAccount.rateLimits;
+  }
+  function renderAccountLimits(box) {
+    const agent = S.gptImages ? 'chatgpt' : viewAgent();
+    if (!usesCodex(agent) && !S.gptImages) return;
+    const limits = accountLimits(agent) || {};
+    for (const key of ['primary', 'secondary']) {
+      const info = limits[key];
+      if (!info || !Number.isFinite(info.usedPercent)) continue;
+      const used = Math.min(100, Math.max(0, info.usedPercent));
+      const remaining = 100 - used;
+      const mins = info.windowDurationMins;
+      const label = mins === 300 ? 'ЗА 5 ЧАСОВ' : mins === 10080 ? 'ЗА 7 ДНЕЙ' : Number.isFinite(mins) && mins > 0 ? mins + ' мин' : key === 'primary' ? 'Основной лимит' : 'Дополнительный лимит';
+      const row = document.createElement('div'); row.className = 'limit account-limit';
+      row.style.setProperty('--limit-accent', agent === 'chatgpt' ? '#6FD3A0' : '#5FB8C9');
+      row.innerHTML = '<div class="limit-provider"></div><div class="limit-head"><span></span><b></b></div><div class="bar"><div></div></div><div class="limit-foot"></div>';
+      row.querySelector('.limit-provider').textContent = AGENTS[agent].label;
+      row.querySelector('.limit-head span').textContent = label;
+      row.querySelector('.limit-head b').textContent = Math.round(remaining) + '%';
+      const bar = row.querySelector('.bar');
+      bar.setAttribute('role', 'progressbar');
+      bar.setAttribute('aria-label', AGENTS[agent].label + ' · ' + label + ' · ' + (I18N.locale.startsWith('ru') ? 'Осталось' : 'Remaining'));
+      bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.setAttribute('aria-valuenow', String(remaining));
+      row.querySelector('.bar div').style.width = remaining + '%';
+      const reset = info.resetsAt;
+      const date = reset != null ? new Date(typeof reset === 'number' ? reset * (reset < 1e12 ? 1000 : 1) : reset) : null;
+      const resets = date && Number.isFinite(date.getTime()) ? date.toLocaleString(I18N.locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      row.querySelector('.limit-foot').textContent = (I18N.locale.startsWith('ru') ? 'Осталось' : 'Remaining') + (resets ? ' · ' + (I18N.locale.startsWith('ru') ? 'Сброс: ' : 'Resets: ') + resets : '');
+      box.append(row);
+    }
+  }
+  function renderMeter() {
+    let strip = $('accountLimitStrip');
+    const composer = $('composer');
+    if (!strip && composer) { strip = document.createElement('div'); strip.id = 'accountLimitStrip'; strip.className = 'account-limit-strip'; composer.after(strip); }
+    if (!strip) return;
+    strip.textContent = '';
+    renderAccountLimits(strip);
+    strip.hidden = !strip.children.length || S.studio || S.gptImages;
+  }
   function renderLimits() {
     const box = $('limits');
-    box.style.setProperty('--accent', AGENTS.claude.color);
+    renderMeter();
+    const agent = S.gptImages ? 'chatgpt' : viewAgent();
+    if (agent !== 'claude') {
+      box.textContent = '';
+      renderAccountLimits(box);
+      if (!box.children.length) {
+        const note = document.createElement('div'); note.className = 'muted-note';
+        note.textContent = isApiChat(agent) ? 'Лимиты подписки недоступны для API.' : 'Лимиты аккаунта пока недоступны.';
+        box.append(note);
+      }
+      return;
+    }
     const L = (S.usage.limits && S.usage.limits.claude) || {};
     const show = [['seven_day', 'ЗА 7 ДНЕЙ'], ['five_hour', 'ЗА 5 ЧАСОВ'], ['seven_day_opus', '7 ДНЕЙ · OPUS'], ['seven_day_sonnet', '7 ДНЕЙ · SONNET']].filter(([k]) => L[k]);
     if (!show.length) {
       box.innerHTML = '<div class="muted-note">Реальный процент лимита подписки Claude появится после первого ответа Claude.</div>';
+      renderAccountLimits(box);
       return;
     }
     box.textContent = '';
@@ -804,6 +1001,7 @@
       else if (pct <= 1) pct = pct * 100;
       const d = document.createElement('div');
       d.className = 'limit';
+      d.style.setProperty('--limit-accent', AGENTS.claude.color);
       const v = pct == null ? '—' : Math.round(pct) + '%';
       const resets = info.resetsAt ? new Date(info.resetsAt * (info.resetsAt < 1e12 ? 1000 : 1)).toLocaleString(I18N.locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
       d.innerHTML = '<div class="limit-head"><span></span><b></b></div><div class="bar"><div></div></div><div class="limit-foot"></div>';
@@ -814,6 +1012,7 @@
       d.querySelector('.limit-foot').textContent = (info.status === 'rejected' ? 'Лимит исчерпан. ' : '') + (resets ? 'Сброс: ' + resets : '');
       box.append(d);
     }
+    renderAccountLimits(box);
   }
 
   function renderUsage() {
@@ -996,7 +1195,7 @@
     t.dead = true;
     t.xterm.writeln('\r\n\x1b[90m[сессия завершена, код ' + exitCode + ']\x1b[0m');
     renderTermTabs();
-    api.checkEnv().then((env) => { S.env = env; renderSys(); });
+    api.checkEnv().then((env) => { S.env = env; renderSys(); refreshCodex(); });
   });
   $('openDock').addEventListener('click', () => { if ($('dock').hidden) { showDock(true); if (!terms.size) openTerminal('', null); } else showDock(false); });
   $('closeDock').addEventListener('click', () => showDock(false));
@@ -1175,6 +1374,10 @@
   });
 
   async function openStudio() {
+    ++chatNavigation;
+    clearInputForms();
+    S.gptImages = false;
+    $('gptImages').hidden = true;
     S.studio = true;
     viewChanged();
     $('hero').hidden = true; $('chatView').hidden = true; $('composer').hidden = true;
@@ -1215,7 +1418,7 @@
     const syncG = () => { const v = gpt.querySelector('input[name=gptb]:checked').value; gpt.querySelectorAll('[data-g]').forEach((f) => (f.hidden = f.dataset.g !== v)); };
     gpt.querySelector('input[value="' + (s.chatgpt.backend || 'codex') + '"]').checked = true;
     syncG();
-    gpt.querySelectorAll('input[name=gptb]').forEach((r) => r.addEventListener('change', async () => { syncG(); await saveSettings({ chatgpt: Object.assign({}, S.settings.chatgpt, { backend: r.value }) }); renderSys(); renderModeSelect(); }));
+    gpt.querySelectorAll('input[name=gptb]').forEach((r) => r.addEventListener('change', async () => { syncG(); await saveSettings({ chatgpt: Object.assign({}, S.settings.chatgpt, { backend: r.value }) }); renderSys(); applyTheme(); renderSkills(); renderChatList(); if (S.chat) $('chatCwd').textContent = isApiChat(S.chat.agent) ? '' : S.chat.cwd; refreshCodex(); }));
     gpt.querySelector('#gptModel').value = s.chatgpt.model || '';
     gpt.querySelector('#gptModel').addEventListener('change', (e) => saveSettings({ chatgpt: Object.assign({}, S.settings.chatgpt, { model: e.target.value.trim() }) }));
     gpt.querySelector('#apiModel').value = s.chatgpt.apiModel || 'gpt-5';
@@ -1268,7 +1471,7 @@
     models.querySelector('#claudeModel').addEventListener('change', (e) => saveSettings({ claude: Object.assign({}, S.settings.claude, { model: e.target.value.trim() }) }));
     models.querySelector('#codexModel').addEventListener('change', (e) => saveSettings({ codex: Object.assign({}, S.settings.codex, { model: e.target.value.trim() }) }));
     models.querySelector('#claudeExe').addEventListener('change', async (e) => { await saveSettings({ claude: Object.assign({}, S.settings.claude, { exePath: e.target.value.trim() }) }); S.env = await api.checkEnv(); renderSys(); });
-    models.querySelector('#codexJs').addEventListener('change', async (e) => { await saveSettings({ codex: Object.assign({}, S.settings.codex, { jsPath: e.target.value.trim() }) }); S.env = await api.checkEnv(); renderSys(); });
+    models.querySelector('#codexJs').addEventListener('change', async (e) => { await saveSettings({ codex: Object.assign({}, S.settings.codex, { jsPath: e.target.value.trim() }) }); S.env = await api.checkEnv(); renderSys(); refreshCodex(); });
 
     // приложение
     const appS = el('<div class="sect"><h3>ПРИЛОЖЕНИЕ</h3>' +
@@ -1363,7 +1566,7 @@
       cb.setAttribute('aria-label', 'Задача включена');
       cb.addEventListener('change', async () => { t.enabled = cb.checked; S.tasks = await api.saveTasks(S.tasks); });
       row.querySelector('b').textContent = t.name;
-      row.querySelector('small').textContent = AGENTS[t.agent].label + ' · ' + t.time + ' · ' + daysText(t.days) + (t.agent !== 'chatgpt' ? ' · ' + base(t.cwd) : '');
+      row.querySelector('small').textContent = AGENTS[t.agent].label + ' · ' + t.time + ' · ' + daysText(t.days) + (!isApiChat(t.agent) ? ' · ' + base(t.cwd) : '');
       const [runB, editB] = row.querySelectorAll('.btn');
       runB.addEventListener('click', async () => { const id = await api.runTask(t.id); closeModal('tasksModal'); if (id) setTimeout(() => openChat(id), 300); });
       editB.addEventListener('click', () => openTasks(t.id));
@@ -1445,7 +1648,7 @@
     renderChatList();
     renderSys();
   });
-  api.onUsage((u) => { S.usage = u; renderLimits(); renderUsage(); });
+  api.onUsage((u) => { S.usage = u; renderLimits(); renderUsage(); renderSys(); });
   api.onTasks((t) => { S.tasks = t; });
   api.onOpenChat((id) => openChat(id));
   let updReady = null;
@@ -1503,8 +1706,17 @@
     }
   });
 
+  function openGptImages() {
+    openDraft();
+    hideViews();
+    viewChanged();
+    S.gptImages = true;
+    applyTheme();
+    $('gptImages').hidden = false;
+  }
+
   /* ---------- доступ для «Мостика» ---------- */
-  window.StellaApp = { api, S, AGENTS, esc, toast, fileUrl, base, openChat, openDraft, openStudio, cfReady, hideViews, onViewChange: (f) => viewListeners.push(f) };
+  window.StellaApp = { api, S, AGENTS, esc, toast, fileUrl, base, openChat, openDraft, openStudio, cfReady, hideViews, openGptImages, runAction, onViewChange: (f) => viewListeners.push(f) };
 
   /* ---------- старт ---------- */
   applyHud();
@@ -1514,4 +1726,6 @@
   renderUsage();
   renderDirectives();
   openDraft();
+  refreshCodex();
+  setInterval(refreshCodex, 120000);
 })();

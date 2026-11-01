@@ -3,7 +3,7 @@
   function lastBlock(msg) { return msg.blocks[msg.blocks.length - 1]; }
 
   function findByKey(msg, key) {
-    if (!key) return null;
+    if (key == null || key === '') return null;
     for (let i = msg.blocks.length - 1; i >= 0; i--) if (msg.blocks[i].key === key) return msg.blocks[i];
     return null;
   }
@@ -45,6 +45,16 @@
         if (b) { b.output = ev.output || ''; b.status = ev.isError ? 'error' : 'done'; }
         break;
       }
+      case 'user-input': {
+        if (!findByKey(msg, ev.reqId)) msg.blocks.push({ type: 'user-input', key: ev.reqId, questions: ev.questions || [], status: msg.status && msg.status !== 'running' ? 'expired' : 'pending' });
+        break;
+      }
+      case 'user-input-resolved': {
+        const b = findByKey(msg, ev.reqId);
+        if (b && b.type === 'user-input') b.status = ev.status === 'expired' ? 'expired' : 'resolved';
+        else if (!b) msg.blocks.push({ type: 'user-input', key: ev.reqId, questions: [], status: ev.status === 'expired' ? 'expired' : 'resolved' });
+        break;
+      }
       case 'approval':
         msg.blocks.push({ type: 'approval', key: ev.reqId, title: ev.title, detail: ev.detail || '', status: 'pending' });
         break;
@@ -67,7 +77,7 @@
         // незавершённые инструменты и запросы закрываем
         for (const b of msg.blocks) {
           if (b.type === 'tool' && b.status === 'running') b.status = msg.status === 'done' ? 'done' : 'error';
-          if (b.type === 'approval' && b.status === 'pending') b.status = 'expired';
+          if ((b.type === 'approval' || b.type === 'user-input') && b.status === 'pending') b.status = 'expired';
         }
         break;
       default:

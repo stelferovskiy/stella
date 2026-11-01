@@ -36,7 +36,7 @@ function createStore(baseDir) {
     showAllProjects: false,
     claude: { permissionMode: 'default', model: '', exePath: '' },
     codex: { sandbox: 'read-only', model: '', jsPath: '' },
-    chatgpt: { backend: 'codex', model: '', apiModel: 'gpt-5' },
+    chatgpt: { backend: 'codex', model: '', apiModel: 'gpt-5', sandbox: 'workspace-write' },
     apiKeyEnc: '',
     hotkey: 'Control+Shift+Space',
     closeToTray: true,

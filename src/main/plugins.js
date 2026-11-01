@@ -31,7 +31,8 @@ function createPlugins({ store }) {
   const codex = (args, opt) => {
     const js = codexJs();
     if (!js) return Promise.resolve({ ok: false, out: '', err: 'Codex не найден. Установите его в панели «Системы».' });
-    return run(process.execPath, [js].concat(args), Object.assign({ env: { ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1' } }, opt));
+    const spec = codexProvider.launchSpec(store.getSettings());
+    return run(spec.command, spec.args.slice(0, -3).concat(args), Object.assign({ env: spec.env }, opt));
   };
   const parse = (r, fallback) => { try { return JSON.parse(r.out); } catch (e) { return fallback; } };
 

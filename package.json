@@ -1,14 +1,15 @@
 {
   "name": "stella",
   "productName": "Stella",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Stella — a futuristic desktop command center for Claude, Codex and ChatGPT",
   "main": "main.js",
   "author": "stelferovskiy",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis --x64 --publish never"
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.1.0",
@@ -16,6 +17,8 @@
     "@xterm/xterm": "^5.5.0"
   },
   "devDependencies": {
+    "acorn": "^8.19.0",
+    "acorn-walk": "^8.3.5",
     "electron": "^36.4.0",
     "electron-builder": "^26.18.0"
   },

@@ -303,6 +303,8 @@
       }
       case 'approval': l.steps.push({ key: ev.reqId, name: 'approval', title: 'Ждёт подтверждения: ' + ev.title, detail: ev.detail, output: '', status: 'running' }); break;
       case 'approval-resolved': { const s = l.steps.find((x) => x.key === ev.reqId); if (s) s.status = ev.status === 'denied' ? 'error' : 'done'; break; }
+      case 'user-input': l.steps.push({ key: ev.reqId, name: 'question', title: 'Вопрос пользователю', detail: (ev.questions || []).map((q) => q.question).join('\n'), output: '', status: 'running' }); break;
+      case 'user-input-resolved': { const s = l.steps.find((x) => x.key === ev.reqId); if (s) s.status = ev.status === 'expired' ? 'error' : 'done'; break; }
       case 'error': l.steps.push({ key: 'err' + Date.now(), name: 'error', title: 'Ошибка', detail: ev.text, output: '', status: 'error' }); l.stage = { mode: 'think' }; if (!l.text) l.text = ev.text; break;
       case 'done': for (const s of l.steps) if (s.status === 'running') s.status = ev.status === 'done' ? 'done' : 'error'; break;
       default: break;
