@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:; frame-src file: data: about:; connect-src 'self'">
+<title>Stella</title>
+<link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="top">
+    <div class="brand">
+      <div class="logo">STELLA <span>/ v2</span></div>
+      <div class="sub">ТВОЙ КОМАНДНЫЙ ЦЕНТР</div>
+    </div>
+    <nav class="tabs" aria-label="Агент">
+      <button type="button" class="tab" data-agent="claude">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 19"/></svg>Claude</button>
+      <button type="button" class="tab" data-agent="codex">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>Codex</button>
+      <button type="button" class="tab" data-agent="chatgpt">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M8.5 10.5h7M8.5 14h4.5"/></svg>ChatGPT</button>
+      <button type="button" class="tab" data-agent="images">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>Студия</button>
+    </nav>
+    <div class="top-right">
+      <button type="button" id="bridgeToggle" class="bridge-btn" title="Мостик — живая работа агентов (Ctrl+B)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="5" cy="17" r="2"/><circle cx="12" cy="7" r="2"/><circle cx="19" cy="14" r="2"/><path d="M6.5 15.5l4-6.5M13.6 8.3l4 4.5"/></svg>Мостик</button>
+      <button type="button" id="hudToggle" class="icon-btn ghost" aria-label="Показать или скрыть панель системы" title="Панель системы">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+      </button>
+      <div class="clockbox"><div id="clock" class="clock">00:00</div><div id="date" class="date"></div></div>
+    </div>
+  </header>
+
+  <div class="body">
+    <aside class="side" aria-label="Чаты">
+      <div class="side-label">ПРОЕКТ</div>
+      <div class="proj">
+        <button type="button" id="projBtn" class="proj-btn" aria-haspopup="true" aria-expanded="false">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span class="proj-text"><b id="projName">Папка</b><small id="projPath"></small></span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div id="projMenu" class="menu" hidden></div>
+      </div>
+      <button type="button" id="newChat" class="btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Новый чат <kbd>Ctrl N</kbd></button>
+      <label class="sr" for="search">Поиск по чатам</label>
+      <input id="search" class="search" placeholder="Поиск по чатам…  Ctrl K" autocomplete="off">
+      <div id="chatList" class="chat-list"></div>
+      <div class="side-foot">
+        <button type="button" class="foot-btn" id="openTasks"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Расписание</button>
+        <button type="button" class="foot-btn" id="openDock"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg>Терминал</button>
+        <button type="button" class="foot-btn" id="openSettings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</button>
+      </div>
+    </aside>
+
+    <main class="main" id="main">
+      <section id="hero" class="hero">
+        <div class="orb-big"><canvas id="orbBig" aria-hidden="true"></canvas></div>
+        <div id="heroName" class="hero-name">CLAUDE</div>
+        <div id="heroSub" class="hero-sub">ЯДРО STELLA · CLAUDE CODE</div>
+        <div id="skills" class="skills" aria-label="Навыки"></div>
+      </section>
+
+      <section id="chatView" class="chat-view" hidden>
+        <div class="chat-head">
+          <canvas id="orbMini" class="orb-mini" aria-hidden="true"></canvas>
+          <div class="chat-head-text">
+            <div id="chatTitle" class="chat-title" title="Нажмите, чтобы переименовать"></div>
+            <div class="chat-meta"><span id="chatAgent" class="agent-pill"></span><span id="chatCwd" class="chat-cwd"></span></div>
+          </div>
+          <div id="chatState" class="chat-state" role="status"></div>
+        </div>
+        <div id="messages" class="messages" aria-live="polite"></div>
+      </section>
+
+      <section id="studio" class="studio" hidden aria-label="Студия изображений">
+        <div class="studio-top">
+          <div class="studio-orb"><canvas id="orbStudio" aria-hidden="true"></canvas></div>
+          <div class="studio-head">
+            <div class="studio-title">СТУДИЯ</div>
+            <div class="studio-sub">FLUX · CLOUDFLARE WORKERS AI · БЕСПЛАТНО С ДНЕВНЫМ ЛИМИТОМ</div>
+            <div class="budget">
+              <div class="limit-head"><span>ЛИМИТ НА СЕГОДНЯ</span><b id="budgetVal">—</b></div>
+              <div class="bar"><div id="budgetBar"></div></div>
+              <div class="limit-foot" id="budgetFoot"></div>
+            </div>
+          </div>
+        </div>
+        <div id="cfSetup" class="cf-setup" hidden></div>
+        <form id="genForm" class="gen-form" autocomplete="off">
+          <label class="sr" for="genPrompt">Описание картинки</label>
+          <textarea id="genPrompt" rows="3" placeholder="Опишите картинку: например, неоновый город ночью под дождём, вид сверху, кинематографичный свет"></textarea>
+          <div class="gen-bar">
+            <label class="sr" for="genModel">Модель</label>
+            <select id="genModel"><option value="schnell">FLUX.1 schnell — быстрая</option><option value="klein">FLUX.2 klein — качественнее</option></select>
+            <label class="sr" for="genSize">Размер</label>
+            <select id="genSize"></select>
+            <label class="sr" for="genSteps">Шаги</label>
+            <select id="genSteps"><option value="4">4 шага</option><option value="6">6 шагов</option><option value="8">8 шагов</option></select>
+            <label class="sr" for="genCount">Количество</label>
+            <select id="genCount"><option value="1">1 картинка</option><option value="2">2 варианта</option><option value="4">4 варианта</option></select>
+            <label class="sr" for="genSeed">Seed</label>
+            <input id="genSeed" class="input seed" placeholder="seed (случайный)" inputmode="numeric">
+            <label class="check small"><input type="checkbox" id="genEnhance" checked> Перевести запрос на английский</label>
+            <span id="genCost" class="gen-cost"></span>
+            <button type="submit" id="genBtn" class="gen-btn">Создать</button>
+          </div>
+        </form>
+        <div id="gallery" class="gallery"></div>
+      </section>
+
+      <section id="bridge" class="bridge" hidden aria-label="Мостик">
+        <form id="bridgeForm" class="bridge-form" autocomplete="off">
+          <label class="sr" for="bridgeInput">Задача для агентов</label>
+          <textarea id="bridgeInput" rows="1" placeholder="Задача для отмеченных агентов — например, сделай сайт-визитку в папке site"></textarea>
+          <div id="bridgeAgents" class="bf-agents" role="group" aria-label="Кому отправить">
+            <label class="bf-chip" style="--c:#E0875F"><input type="checkbox" value="claude" checked><span>Claude</span></label>
+            <label class="bf-chip" style="--c:#5FB8C9"><input type="checkbox" value="codex"><span>Codex</span></label>
+            <label class="bf-chip" style="--c:#6FD3A0"><input type="checkbox" value="chatgpt"><span>ChatGPT</span></label>
+            <label class="bf-chip" style="--c:#A98BFF"><input type="checkbox" value="images"><span>Студия</span></label>
+          </div>
+          <button type="submit" class="gen-btn">Запустить</button>
+        </form>
+        <div id="lanes" class="lanes">
+          <div id="bridgeEmpty" class="bridge-empty">
+            <div class="be-title">МОСТИК</div>
+            <p>Здесь видно, как агенты работают прямо сейчас: код печатается по символам, команды выводят результат, сайт собирается в превью, а каждый шаг загорается звездой на линии внизу.</p>
+            <p>Дайте задачу сразу нескольким агентам выше — или просто начните работу в любом чате: она появится здесь сама.</p>
+          </div>
+        </div>
+      </section>
+
+      <form id="composer" class="composer" autocomplete="off">
+        <div id="attachRow" class="attach-row" hidden></div>
+        <label class="sr" for="input">Сообщение</label>
+        <textarea id="input" rows="1" placeholder="Спроси или дай задачу…"></textarea>
+        <div class="composer-bar">
+          <button type="button" id="attachBtn" class="icon-btn ghost" aria-label="Прикрепить файлы" title="Прикрепить файлы">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 12.5l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6l8.3-8.3"/></svg>
+          </button>
+          <label class="sr" for="modeSelect">Режим</label>
+          <select id="modeSelect" class="mode-select"></select>
+          <span id="composerHint" class="composer-hint">Enter — отправить · Shift+Enter — новая строка</span>
+          <button type="submit" id="sendBtn" class="send-btn" aria-label="Отправить">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6"/></svg>
+          </button>
+          <button type="button" id="stopBtn" class="stop-btn" aria-label="Остановить" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          </button>
+        </div>
+      </form>
+    </main>
+
+    <aside class="hud" id="hud" aria-label="Панель системы">
+      <div class="hud-label">● СИСТЕМЫ</div>
+      <div id="sysList" class="sys-list"></div>
+      <div class="hud-label">● ЛИМИТЫ CLAUDE</div>
+      <div id="limits" class="card"></div>
+      <div class="hud-label">● РАСХОД ЗА НЕДЕЛЮ</div>
+      <div id="weekUsage" class="usage-grid"></div>
+      <div class="hud-label">● ДИРЕКТИВЫ</div>
+      <ul id="directives" class="directives"></ul>
+      <form id="dirForm" class="row">
+        <label for="dirInput" class="sr">Новая директива</label>
+        <input id="dirInput" class="input" placeholder="Новая директива…" autocomplete="off">
+        <button type="submit" class="icon-btn" aria-label="Добавить директиву">+</button>
+      </form>
+      <div class="hud-label">● ФАЙЛЫ ЧАТА</div>
+      <div id="chatFiles" class="files"></div>
+    </aside>
+  </div>
+
+  <section class="dock" id="dock" hidden aria-label="Терминалы">
+    <div class="dock-bar">
+      <span class="dock-title">Терминалы</span>
+      <div id="termTabs" class="term-tabs"></div>
+      <button type="button" id="newShell" class="btn">+ PowerShell</button>
+      <button type="button" id="closeDock" class="icon-btn ghost" aria-label="Скрыть терминалы">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+    </div>
+    <div id="termHost" class="term-host"><div id="termEmpty" class="term-empty">Нет открытых терминалов.</div></div>
+  </section>
+
+  <aside class="drawer" id="drawer" hidden aria-label="Предпросмотр">
+    <div class="drawer-bar">
+      <div class="drawer-title"><b id="drawerName"></b><small id="drawerPath"></small></div>
+      <button type="button" id="drawerOpen" class="btn">Открыть</button>
+      <button type="button" id="drawerReveal" class="btn">Показать в папке</button>
+      <button type="button" id="drawerClose" class="icon-btn ghost" aria-label="Закрыть предпросмотр">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="drawerBody" class="drawer-body"></div>
+  </aside>
+
+  <div class="modal" id="settingsModal" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-box">
+      <div class="modal-head"><h2 id="settingsTitle">Настройки</h2>
+        <button type="button" class="icon-btn ghost" data-close aria-label="Закрыть"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-body" id="settingsBody"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="tasksModal" hidden role="dialog" aria-modal="true" aria-labelledby="tasksTitle">
+    <div class="modal-box">
+      <div class="modal-head"><h2 id="tasksTitle">Расписание</h2>
+        <button type="button" class="icon-btn ghost" data-close aria-label="Закрыть"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-body" id="tasksBody"></div>
+    </div>
+  </div>
+
+  <div id="dropOverlay" class="drop-overlay" hidden><div>Отпустите файлы, чтобы прикрепить</div></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</div>
+
+<script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
+<script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+<script src="../shared/reducer.js"></script>
+<script src="md.js"></script>
+<script src="orb.js"></script>
+<script src="app.js"></script>
+<script src="bridge.js"></script>
+</body>
+</html>

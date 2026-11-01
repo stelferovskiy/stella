@@ -1,0 +1,87 @@
+{
+  "name": "stella",
+  "productName": "Stella",
+  "version": "2.2.0",
+  "description": "Stella — a futuristic desktop command center for Claude, Codex and ChatGPT",
+  "main": "main.js",
+  "author": "stelferovskiy",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.1.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0"
+  },
+  "devDependencies": {
+    "electron": "^36.4.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.stella.desktop",
+    "productName": "Stella",
+    "copyright": "Copyright © 2026 stelferovskiy",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "src/**/*"
+    ],
+    "asar": false,
+    "asarUnpack": [
+      "node_modules/@lydell/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "executableName": "Stella",
+      "signAndEditExecutable": false
+    },
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false,
+      "shortcutName": "Stella",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "include": "build/installer.nsh",
+      "language": "1049",
+      "installerLanguages": [
+        "ru_RU"
+      ],
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Stella-Setup-${version}.exe",
+      "uninstallDisplayName": "Stella"
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stelferovskiy/stella.git"
+  },
+  "homepage": "https://github.com/stelferovskiy/stella"
+}
