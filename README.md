@@ -5,6 +5,7 @@
 <p align="center">A futuristic desktop command center for <b>Claude</b>, <b>Codex</b> and <b>ChatGPT</b> on Windows.</p>
 
 <p align="center">
+  <a href="https://stelferovskiy.github.io/stella/"><b>Website</b></a> ·
   <a href="https://github.com/stelferovskiy/stella/releases/latest"><b>Download the installer</b></a> ·
   <a href="CODE_SIGNING_POLICY.md">Code signing policy</a> ·
   <a href="PRIVACY.md">Privacy</a> ·
