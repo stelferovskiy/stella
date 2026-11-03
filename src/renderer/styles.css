@@ -200,6 +200,8 @@ textarea.input { padding: 8px 10px; resize: vertical; line-height: 1.45; }
 .approval.resolved { border-color: var(--line); background: transparent; }
 .approval.resolved .ap-title::before { background: var(--dim); box-shadow: none; }
 .err-card { margin: 8px 0; border: 1px solid rgba(240,122,122,.5); border-radius: 10px; background: rgba(240,122,122,.06); padding: 10px 14px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.steer-note { margin: 8px 0 8px auto; max-width: 80%; width: fit-content; border: 1px solid rgba(var(--accent-rgb),.45); border-radius: 10px; background: rgba(var(--accent-rgb),.08); padding: 8px 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.steer-label { display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; opacity: .65; margin-bottom: 2px; }
 .err-card .btn { margin-top: 8px; }
 .typing { display: inline-flex; gap: 5px; padding: 6px 0; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1s infinite; }

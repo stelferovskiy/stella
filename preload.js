@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('stella', {
   renameChat: (id, title) => ipcRenderer.invoke('chat:rename', id, title),
   send: (id, payload) => ipcRenderer.invoke('chat:send', id, payload),
   stop: (id) => ipcRenderer.invoke('chat:stop', id),
+  steer: (id, payload) => ipcRenderer.invoke('chat:steer', id, payload),
   approve: (id, reqId, answer) => ipcRenderer.invoke('chat:approve', id, reqId, answer),
 
   pickFiles: () => ipcRenderer.invoke('files:pick'),

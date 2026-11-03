@@ -84,8 +84,12 @@
     el.textContent = STATE_LABEL[st] || '';
     el.className = 'chat-state ' + st;
     const running = S.chat && S.states[S.chat.id] && S.states[S.chat.id] !== 'idle' && S.states[S.chat.id] !== 'error';
-    $('sendBtn').hidden = !!running;
+    // While the agent works, Send stays: a new message joins the running task.
+    $('sendBtn').hidden = false;
+    $('sendBtn').setAttribute('aria-label', running ? L('composer.steer') : L('composer.send'));
+    $('sendBtn').title = running ? L('composer.steer') : '';
     $('stopBtn').hidden = !running;
+    $('input').placeholder = running ? L('composer.placeholderSteer') : isApiChat(viewAgent()) ? L('composer.placeholderChat') : L('composer.placeholderProject');
   }
 
   /* ---------- тема агента ---------- */
@@ -612,6 +616,9 @@
       return '<div class="approval' + (pending ? '' : ' resolved') + '"><div class="ap-title">' + esc(b.title) + '</div>' + (b.detail ? '<pre>' + esc(b.detail) + '</pre>' : '') +
         (pending ? '<div class="ap-actions"><button type="button" class="btn accent" data-ap="allow" data-req="' + esc(b.key) + '">' + L('approval.allow') + '</button><button type="button" class="btn" data-ap="always" data-req="' + esc(b.key) + '">' + L('approval.always') + '</button><button type="button" class="btn danger" data-ap="deny" data-req="' + esc(b.key) + '">' + L('approval.deny') + '</button></div>' : '<div class="ap-status">' + st + '</div>') + '</div>';
     }
+    if (b.type === 'steer') {
+      return '<div class="steer-note"><span class="steer-label">' + L('msg.steer') + '</span>' + esc(b.text) + '</div>';
+    }
     if (b.type === 'error') {
       return '<div class="err-card">' + esc(b.text) + (b.action && ACTION_LABEL[b.action] ? '<div><button type="button" class="btn accent" data-action="' + esc(b.action) + '">' + ACTION_LABEL[b.action] + '</button></div>' : '') + '</div>';
     }
@@ -792,7 +799,15 @@
   async function submit(textOverride) {
     const text = (textOverride != null ? textOverride : $('input').value).trim();
     if (!text && !S.attachments.length) return;
-    if (S.chat && S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) { toast(L('chat.busy')); return; }
+    if (S.chat && S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) {
+      // The agent is working: hand the text to the running task instead of refusing it.
+      if (!text) { toast(L('chat.steerTextOnly')); return; }
+      $('input').value = ''; autosize();
+      const r = await api.steer(S.chat.id, { text });
+      if (r === 'queued') toast(L('chat.steerQueued'));
+      else if (!r) { $('input').value = text; autosize(); }
+      return;
+    }
     const atts = S.attachments.slice();
     if (!S.chat) {
       const c = await api.createChat({ agent: S.agent, cwd: S.settings.currentProject });

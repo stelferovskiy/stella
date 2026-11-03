@@ -109,7 +109,7 @@ function partialField(json, key) {
   return { value: out, done: false };
 }
 
-async function run({ chat, text, attachments, settings, emit, emitLive, requestApproval, onSession, onLimit, abortController, mode }) {
+async function run({ chat, text, attachments, settings, emit, emitLive, requestApproval, onSession, onLimit, registerSteer, abortController, mode }) {
   emitLive = emitLive || (() => {});
   const exe = findClaudeExe(settings);
   if (!exe) {
@@ -137,12 +137,28 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
     } catch (e) {}
   }
 
-  let finishInput;
-  const inputDone = new Promise((r) => { finishInput = r; });
+  // Input stays open until the turn ends so approvals work and messages typed meanwhile can join:
+  // they go with priority 'next', so Claude Code folds them into the running turn at the next step.
+  const pending = [];
+  let wake = null, inputClosed = false, steered = 0, graceTimer = null;
+  function finishInput() { inputClosed = true; clearTimeout(graceTimer); if (wake) wake(); }
   async function* prompt() {
     yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null };
-    await inputDone; // держим ввод открытым до конца хода, чтобы работали подтверждения
+    for (;;) {
+      while (pending.length) yield pending.shift();
+      if (inputClosed) return;
+      await new Promise((r) => { wake = r; });
+      wake = null;
+    }
   }
+  if (registerSteer) registerSteer((t) => {
+    if (inputClosed || abortController.signal.aborted) return false;
+    pending.push({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: t }] }, parent_tool_use_id: null, priority: 'next' });
+    steered++;
+    clearTimeout(graceTimer); graceTimer = null; // the turn goes on: do not close the input under it
+    if (wake) wake();
+    return true;
+  });
 
   const permissionMode = mode || settings.claude.permissionMode || 'default';
   const options = {
@@ -199,6 +215,8 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
   try {
     const q = query({ prompt: prompt(), options });
     for await (const m of q) {
+      // A new turn started for a message typed during the previous one: keep the input open.
+      if (graceTimer && ((m.type === 'stream_event' && m.event && m.event.type === 'message_start') || m.type === 'assistant')) { clearTimeout(graceTimer); graceTimer = null; }
       if (m.session_id && m.session_id !== chat.claudeSession) onSession(m.session_id);
       if (m.type === 'stream_event') {
         if (m.parent_tool_use_id) continue;
@@ -256,7 +274,8 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
           input += (u.inputTokens || 0) + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0);
           output += u.outputTokens || 0;
         } else if (m.usage) { input = m.usage.input_tokens || 0; output = m.usage.output_tokens || 0; }
-        usage = { input, output, cost: m.total_cost_usd || 0 };
+        // Several turns (typed-in messages) add up.
+        usage = usage ? { input: usage.input + input, output: usage.output + output, cost: usage.cost + (m.total_cost_usd || 0) } : { input, output, cost: m.total_cost_usd || 0 };
         if (m.subtype !== 'success' || m.is_error) {
           const errText = (m.errors && m.errors.length ? m.errors.join('\n') : '') || m.result || L('claude.failed');
           const needLogin = /login|log in|api key|auth|credential|unauthori/i.test(errText);
@@ -265,7 +284,10 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
           status = 'error';
           errored = true;
         }
-        finishInput();
+        // Messages typed during this turn may already be answered in it, or Claude Code may run
+        // one more turn for them; wait a moment and close the input if nothing new starts.
+        if (steered && !errored && !abortController.signal.aborted) { steered = 0; clearTimeout(graceTimer); graceTimer = setTimeout(finishInput, 3000); }
+        else finishInput();
       }
     }
   } catch (err) {

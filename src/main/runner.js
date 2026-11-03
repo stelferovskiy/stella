@@ -88,7 +88,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
     broadcast('chat:message', { chatId, message: msg });
 
     const abortController = new AbortController();
-    const entry = { abort: abortController, approvals: new Map(), inputs: new Map(), requests: new Map(), msgId: msg.id, state: 'thinking' };
+    const entry = { abort: abortController, approvals: new Map(), inputs: new Map(), requests: new Map(), msgId: msg.id, state: 'thinking', steer: null, queue: [] };
     active.set(chatId, entry);
     setState(chatId, 'thinking');
 
@@ -105,6 +105,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
       scheduleSave();
     };
 
+    entry.emit = emit;
     const emitLive = (ev) => broadcast('agent:live', { chatId, agent: chat.agent, ev });
 
     // слежение за файлами проекта — для живого превью
@@ -155,7 +156,13 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
       abortController.signal.addEventListener('abort', cancel, { once: true });
     });
     const onRequestResolved = (id) => { const cancel = entry.requests.get(id); if (cancel) cancel(); if (!entry.approvals.size && !entry.inputs.size) setState(chatId, 'thinking'); };
-    const onLimit = (info) => { if (!info) return; store.setLimit(chat.agent, 'account', info); broadcast('usage:changed', store.getUsage()); };
+    const onLimit = (info) => {
+      if (!info) return;
+      if (account.slot && account.provider && accounts.activeSlot(store.getSettings(), account.provider) !== account.slot) return;
+      store.setLimit(chat.agent, 'account', info); broadcast('usage:changed', store.getUsage());
+    };
+    // Messages typed while the agent works: the provider hands over a function that injects them into the running turn.
+    const registerSteer = (fn) => { entry.steer = fn; };
 
     let result = { status: 'error' };
     try {
@@ -163,15 +170,25 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
         result = await claude.run({
           chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, abortController, mode,
           onSession: (id) => { chat.claudeSession = id; scheduleSave(); },
-          onLimit: (info) => { store.setLimit('claude', info.rateLimitType || 'unknown', info); broadcast('usage:changed', store.getUsage()); }
+          onLimit: (info) => {
+            // A run that started under the other account must not overwrite the active account's limits.
+            if (account.slot && accounts.activeSlot(store.getSettings(), 'claude') !== account.slot) return;
+            store.setLimit('claude', info.rateLimitType || 'unknown', info);
+            // The event carries every window; keep the other bars fresh too, not only the one that triggered it.
+            for (const [k, w] of Object.entries(info.unifiedWindows || {})) {
+              if (k !== info.rateLimitType && w && w.utilization != null) store.setLimit('claude', k, { utilization: w.utilization, resetsAt: w.resetsAt, status: w.status });
+            }
+            broadcast('usage:changed', store.getUsage());
+          },
+          registerSteer
         });
       } else if (chat.agent === 'codex') {
-        result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, abortController, mode, flavor: 'codex', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+        result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, registerSteer, abortController, mode, flavor: 'codex', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
       } else if (chat.agent === 'chatgpt') {
         if (settings.chatgpt.backend === 'api') {
           result = await openai.run({ chat, text: promptText, attachments: atts, settings, apiKey: getApiKey(), emit, abortController, historyIndex });
         } else {
-          result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, abortController, mode: mode || settings.chatgpt.sandbox || 'workspace-write', flavor: 'chatgpt', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+          result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, registerSteer, abortController, mode: mode || settings.chatgpt.sandbox || 'workspace-write', flavor: 'chatgpt', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
         }
       }
     } catch (err) {
@@ -197,7 +214,14 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
     broadcast('chat:event', { chatId, msgId: msg.id, ev: { t: 'done', status, usage: result.usage } });
     if (result.usage) { store.addUsage(chat.agent, result.usage); broadcast('usage:changed', store.getUsage()); }
     active.delete(chatId);
+    entry.steer = null;
     setState(chatId, status === 'error' ? 'error' : 'idle');
+    // Messages that could not join the running turn go out as the next message, unless the user pressed Stop.
+    const queued = entry.queue.splice(0);
+    if (queued.length) {
+      if (status === 'stopped') broadcast('toast', L('chat.steerDropped'));
+      else setTimeout(() => send(chatId, { text: queued.join('\n\n') }).catch((err) => broadcast('toast', String(err.message || err))), 0);
+    }
     if (status === 'error' && result.limitHit && account.provider && onAccountLimit) {
       Promise.resolve().then(() => onAccountLimit({ chatId, provider: account.provider, from: account.slot })).catch(() => {});
     }
@@ -210,6 +234,25 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
       notify({ title: L('notify.error'), body: chat.title, chatId, onlyIfHidden: true });
     }
     return status;
+  }
+
+  // A message typed while the agent works. It joins the running turn when the provider supports it
+  // (Claude: queued user message, Codex: turn/steer); otherwise it is sent right after the reply.
+  // Returns 'steered' | 'queued' | 'sent'.
+  async function steer(chatId, { text }) {
+    text = String(text || '').trim();
+    if (!text) return false;
+    const entry = active.get(chatId);
+    if (!entry) { await send(chatId, { text }); return 'sent'; }
+    let ok = false;
+    if (entry.steer) { try { ok = await entry.steer(text); } catch (e) { ok = false; } }
+    if (!ok || active.get(chatId) !== entry) {
+      if (active.get(chatId) !== entry) { await send(chatId, { text }); return 'sent'; }
+      entry.queue.push(text);
+      return 'queued';
+    }
+    entry.emit({ t: 'steer', text, time: Date.now() });
+    return 'steered';
   }
 
   function stop(chatId) {
@@ -263,7 +306,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
 
   function stopAll() { for (const a of active.values()) a.abort.abort(); }
 
-  return { send, stop, approve, answerInput, states, stopAll, isRunning: (id) => active.has(id) };
+  return { send, steer, stop, approve, answerInput, states, stopAll, isRunning: (id) => active.has(id) };
 }
 
 module.exports = { createRunner };

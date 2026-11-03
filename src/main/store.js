@@ -8,7 +8,8 @@ const { L, dicts } = require('./i18n');
 
 // Built-in skills and directives keep a `builtin` id so the UI shows them in the current language.
 // Once the user edits one, the id is dropped and their own text is kept as is.
-const SKILL_IDS = ['brief', 'review', 'overview', 'fixTests', 'weekPlan', 'explain'];
+const SKILL_IDS = ['brief', 'review', 'overview', 'fixTests', 'weekPlan', 'explain', 'computerUse'];
+const SKILLS_CATALOG_VERSION = 2;
 const DIRECTIVE_IDS = ['signIn', 'addFolder', 'customizeSkills'];
 const builtinSkill = (id) => ({ builtin: id, label: L('skill.' + id + '.label'), prompt: L('skill.' + id + '.prompt') });
 const builtinDirective = (id) => ({ builtin: id, text: L('directive.' + id), done: false });
@@ -62,6 +63,15 @@ function createStore(baseDir) {
   };
   let settings = Object.assign({}, defaults, readJson(settingsFile, {}));
   settings.skills = tagBuiltins(settings.skills, SKILL_IDS, (id) => ({ label: 'skill.' + id + '.label', prompt: 'skill.' + id + '.prompt' }));
+  // Add new built-ins to existing installations once. Later user removal remains respected.
+  if ((settings.skillsCatalogVersion || 0) < SKILLS_CATALOG_VERSION) {
+    const computerUseLabels = [dicts.ru['skill.computerUse.label'], dicts.en['skill.computerUse.label']];
+    if (Array.isArray(settings.skills) && !settings.skills.some((skill) => skill?.builtin === 'computerUse' || computerUseLabels.includes(skill?.label))) {
+      settings.skills.push(builtinSkill('computerUse'));
+    }
+    settings.skillsCatalogVersion = SKILLS_CATALOG_VERSION;
+    writeJson(settingsFile, settings);
+  }
   settings.directives = tagBuiltins(settings.directives, DIRECTIVE_IDS, (id) => ({ text: 'directive.' + id }));
   for (const k of ['claude', 'codex', 'chatgpt']) settings[k] = Object.assign({}, defaults[k], settings[k] || {});
   if (!Array.isArray(settings.projects) || !settings.projects.length) settings.projects = [os.homedir()];
@@ -159,6 +169,17 @@ function createStore(baseDir) {
     delete usage.limits[agent];
     writeJson(usageFile, usage);
   }
+  // Limits belong to an account. On a switch the shown limits are parked under the old slot and
+  // the new slot's last known values come back, so the panel is never empty for a known account.
+  usage.saved = usage.saved || {};
+  function swapLimits(agent, fromSlot, toSlot) {
+    const park = (slot) => agent + '#' + slot;
+    if (usage.limits[agent]) usage.saved[park(fromSlot)] = usage.limits[agent];
+    if (usage.saved[park(toSlot)]) usage.limits[agent] = usage.saved[park(toSlot)];
+    else delete usage.limits[agent];
+    delete usage.saved[park(toSlot)];
+    writeJson(usageFile, usage);
+  }
   function getUsage() {
     return { week: usage.weeks[weekKey(new Date())] || {}, limits: usage.limits || {} };
   }
@@ -167,7 +188,7 @@ function createStore(baseDir) {
     dir, getSettings, saveSettings,
     listChats, getChat, saveChat, createChat, deleteChat,
     getTasks, saveTasks,
-    addUsage, setLimit, clearLimits, getUsage
+    addUsage, setLimit, clearLimits, swapLimits, getUsage
   };
 }
 

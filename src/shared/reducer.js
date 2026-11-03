@@ -66,6 +66,10 @@
       case 'error':
         msg.blocks.push({ type: 'error', text: ev.text, action: ev.action || null });
         break;
+      case 'steer':
+        // a message the user typed while the agent was working; it joined the running turn
+        msg.blocks.push({ type: 'steer', text: ev.text || '', time: ev.time || Date.now() });
+        break;
       case 'files': {
         msg.files = msg.files || [];
         for (const p of ev.paths || []) if (p && msg.files.indexOf(p) === -1) msg.files.push(p);

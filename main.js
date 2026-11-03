@@ -351,6 +351,7 @@ function wireIpc() {
     return s;
   });
   ipcMain.handle('chat:send', (_e, id, payload) => { runner.send(id, payload || {}).catch((err) => broadcast('toast', String(err.message || err))); return true; });
+  ipcMain.handle('chat:steer', (_e, id, payload) => runner.steer(id, payload || {}).catch((err) => { broadcast('toast', String(err.message || err)); return false; }));
   ipcMain.handle('chat:stop', (_e, id) => { runner.stop(id); return true; });
   ipcMain.handle('chat:approve', (_e, id, reqId, answer) => runner.approve(id, reqId, answer));
   ipcMain.handle('chat:answerInput', (_e, id, reqId, answers) => runner.answerInput(id, reqId, answers));
@@ -438,12 +439,13 @@ function saveAccountCfg(provider, patch) {
 }
 function setActiveAccount(provider, slot) {
   // Carry plugin/MCP/settings changes made under the account being left.
-  try { accounts.syncShared(provider, accounts.activeSlot(store.getSettings(), provider)); } catch (e) {}
-  saveAccountCfg(provider, { active: slot === 2 ? 2 : 1 });
-  // Limits shown in the panel belonged to the previous account.
-  for (const agent of provider === 'claude' ? ['claude'] : ['codex', 'chatgpt']) store.clearLimits(agent);
+  const from = accounts.activeSlot(store.getSettings(), provider), to = slot === 2 ? 2 : 1;
+  try { accounts.syncShared(provider, from); } catch (e) {}
+  saveAccountCfg(provider, { active: to });
+  // Limits shown in the panel belong to an account: park the old one's, bring back the new one's.
+  if (from !== to) for (const agent of provider === 'claude' ? ['claude'] : ['codex', 'chatgpt']) store.swapLimits(agent, from, to);
   broadcast('usage:changed', store.getUsage());
-  if (provider === 'claude') pollClaudeLimits();
+  if (provider === 'claude') pollClaudeLimits({ force: true });
   broadcast('accounts:changed', accounts.cfg(store.getSettings(), provider));
 }
 // A run hit the usage limit: offer the other account, only when both have a paid plan.
@@ -473,15 +475,38 @@ function wireAccountsIpc() {
 }
 
 let limitsTimer = null;
-async function pollClaudeLimits() {
+// The usage endpoint is rate limited per account (Claude Code polls it too), so a 429 must not
+// wipe or freeze the panel: back off per slot and keep the last known values meanwhile.
+const LIMITS_EVERY = 3 * 60 * 1000;
+const limitsPoll = { 1: { next: 0, backoff: 0 }, 2: { next: 0, backoff: 0 } };
+let limitsBusy = false;
+async function pollClaudeLimits(opts) {
+  const slot = accounts.activeSlot(store.getSettings(), 'claude');
+  const st = limitsPoll[slot];
+  const now = Date.now();
+  // A forced poll (account switch) skips the normal interval but still respects a 429 backoff.
+  const waiting = now < st.next && (st.backoff || !(opts && opts.force));
+  if (limitsBusy || waiting) return;
+  const token = accounts.claudeToken(store.getSettings());
+  if (!token) return;
+  limitsBusy = true;
   try {
-    const token = accounts.claudeToken(store.getSettings());
-    if (!token) return;
     const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
       headers: { Authorization: 'Bearer ' + token, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'stella' }
     });
+    if (res.status === 429) {
+      const after = Number(res.headers.get('retry-after'));
+      st.backoff = Math.min(30 * 60 * 1000, st.backoff ? st.backoff * 2 : 5 * 60 * 1000);
+      st.next = Date.now() + Math.max(st.backoff, Number.isFinite(after) ? after * 1000 : 0);
+      return;
+    }
+    // 401: the access token expired; Claude Code refreshes it on its next run.
+    st.next = Date.now() + LIMITS_EVERY;
     if (!res.ok) return;
+    st.backoff = 0;
     const data = await res.json();
+    // The user switched accounts while this request was in flight: these numbers are not theirs.
+    if (accounts.activeSlot(store.getSettings(), 'claude') !== slot) return;
     for (const k of ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet']) {
       const v = data[k];
       if (!v || v.utilization == null) continue;
@@ -493,6 +518,7 @@ async function pollClaudeLimits() {
     }
     broadcast('usage:changed', store.getUsage());
   } catch (e) { /* offline or no credentials: keep last known values */ }
+  finally { limitsBusy = false; }
 }
 
 app.on('before-quit', () => { quitting = true; });

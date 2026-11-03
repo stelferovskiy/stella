@@ -95,7 +95,7 @@ async function getAccount(settings, slot) {
   return withClient(settings, async (c) => { const account = await c.request('account/read', { refreshToken: false }); try { return { ...account, ...await c.request('account/rateLimits/read', {}) }; } catch (_) { return { ...account, rateLimits: null }; } }, slot);
 }
 const CHAT_INSTRUCTIONS = 'You are the conversational assistant inside Stella. Answer in the user’s language. Help with questions, writing and projects. Use tools when needed for the user’s request, and respect their chosen approval policy.';
-async function run({ chat, text, attachments = [], settings, emit: emitRaw, emitLive = () => {}, onThread, onLimit, abortController, mode, flavor, requestApproval, requestUserInput, onRequestResolved, resumeFallback }) {
+async function run({ chat, text, attachments = [], settings, emit: emitRaw, emitLive = () => {}, onThread, onLimit, registerSteer, abortController, mode, flavor, requestApproval, requestUserInput, onRequestResolved, resumeFallback }) {
   const signal = abortController.signal; if (signal.aborted) return { status: 'stopped' };
   let limitHit = false;
   const emit = (ev) => { if (ev && ev.t === 'error' && (ev.limit || accounts.isLimitText(ev.text))) limitHit = true; emitRaw(ev); };
@@ -153,6 +153,12 @@ async function run({ chat, text, attachments = [], settings, emit: emitRaw, emit
     emit({ t: 'state', s: 'thinking' });
     const turn = await client.request('turn/start', { threadId, input, cwd: chat.cwd, ...policy, approvalsReviewer: 'user', ...(cfg.model ? { model: cfg.model } : {}), ...(cfg.effort ? { effort: cfg.effort } : {}) }, 60000);
     turnId = turn.turn.id; if (signal.aborted) abort();
+    // Messages typed while the turn runs are steered into it; false means "send it after the reply".
+    if (registerSteer) registerSteer(async (t) => {
+      if (settled || signal.aborted || !client || client.closed || !threadId || !turnId) return false;
+      try { await client.request('turn/steer', { threadId, input: [{ type: 'text', text: t, text_elements: [] }], expectedTurnId: turnId }, 15000); return true; }
+      catch (_) { return false; }
+    });
     const result = await done;
     return result && result.status === 'error' && limitHit ? { ...result, limitHit } : result;
   } catch (err) {

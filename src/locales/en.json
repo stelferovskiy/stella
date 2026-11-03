@@ -75,7 +75,6 @@
   "cf.title": "Connect Cloudflare — it's free",
   "cf.token": "API token",
   "cf.tokenPlaceholder": "Workers AI token",
-  "chat.busy": "The agent is still replying. Wait for the answer or press Stop.",
   "chat.delete": "Delete chat",
   "chat.deleteConfirm": "Delete?",
   "chat.new": "New chat",
@@ -429,6 +428,8 @@
   "side.searchPlaceholder": "Search chats…  Ctrl K",
   "skill.brief.label": "Morning brief",
   "skill.brief.prompt": "Write a short morning brief for this project: what changed since yesterday (git log, open TODOs) and what is worth doing today.",
+  "skill.computerUse.label": "Control my computer",
+  "skill.computerUse.prompt": "Use the installed Computer Use skill and available tools to work in an app on my computer. Check that the tool is connected; if unavailable, say so without pretending to act. Task: ",
   "skill.explain.label": "Explain the code",
   "skill.explain.prompt": "Explain in plain words what this project does and how to run it.",
   "skill.fixTests.label": "Fix tests",
@@ -596,5 +597,11 @@
   "accounts.switchOk": "Switch and continue",
   "accounts.switched": "Account {n} is active, continuing the conversation",
   "accounts.notPaid": "Limit reached, but switching to the second account requires a paid plan on both accounts.",
-  "accounts.continuePrompt": "Continue from where you left off."
+  "accounts.continuePrompt": "Continue from where you left off.",
+  "chat.steerDropped": "The message typed during the reply was not sent because the agent was stopped.",
+  "chat.steerQueued": "The agent can't take it right now. The message will be sent as soon as it finishes.",
+  "chat.steerTextOnly": "Attachments can be sent after the reply. While the agent is working, you can only add text.",
+  "composer.placeholderSteer": "Add to the task — the agent will pick it up as it works…",
+  "composer.steer": "Add to the running task",
+  "msg.steer": "Added during the work"
 }
