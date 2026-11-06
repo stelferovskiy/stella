@@ -168,7 +168,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
     try {
       if (chat.agent === 'claude') {
         result = await claude.run({
-          chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, abortController, mode,
+          chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, abortController, mode,
           onSession: (id) => { chat.claudeSession = id; scheduleSave(); },
           onLimit: (info) => {
             // A run that started under the other account must not overwrite the active account's limits.
@@ -285,9 +285,10 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
     for (const q of pending.questions) {
       const values = answers[q.id]?.answers;
       if (q.required === false && (!values || values.length === 0 || values[0] === '')) continue;
-      if (!Array.isArray(values) || values.length !== 1 || typeof values[0] !== 'string' || !values[0].trim()) return false;
-      if (q.options?.length && !q.isOther && !q.isSecret && !q.options.some((o) => o.label === values[0])) return false;
-      clean[q.id] = { answers: [values[0]] };
+      if (!Array.isArray(values) || !values.length || (values.length > 1 && !q.multiSelect)) return false;
+      if (values.some((v) => typeof v !== 'string' || !v.trim())) return false;
+      if (q.options?.length && !q.isOther && !q.isSecret && !values.every((v) => q.options.some((o) => o.label === v))) return false;
+      clean[q.id] = { answers: values.slice() };
     }
     a.inputs.delete(reqId);
     const chat = store.getChat(chatId), msg = chat && chat.messages.find((m) => m.id === a.msgId);

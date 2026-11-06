@@ -605,8 +605,9 @@
       if (b.status !== 'pending' || msg.status !== 'running') return '<div class="approval resolved">' + (b.status === 'resolved' ? L('input.sent') : L('approval.expired')) + '</div>';
       return '<form class="approval input-request" data-input-req="' + esc(b.key) + '" data-input-chat="' + esc(S.chat.id) + '" data-input-msg="' + esc(msg.id) + '">' + (b.questions || []).map((q, i) => {
         const options = q.isSecret ? [] : (q.options || []);
-        return '<fieldset data-question="' + i + '"><legend>' + esc(q.header || q.question) + '</legend><p>' + esc(q.question) + '</p>' + options.map((o, j) => '<label class="input-option"><input type="radio" name="q' + i + '" value="' + j + '"><span>' + esc(o.label) + (o.description ? '<small>' + esc(o.description) + '</small>' : '') + '</span></label>').join('') +
-          (options.length && q.isOther ? '<label class="input-option"><input type="radio" name="q' + i + '" value="other">' + L('input.other') + '</label>' : '') +
+        const kind = q.multiSelect ? 'checkbox' : 'radio';
+        return '<fieldset data-question="' + i + '"><legend>' + esc(q.header || q.question) + '</legend><p>' + esc(q.question) + '</p>' + options.map((o, j) => '<label class="input-option"><input type="' + kind + '" name="q' + i + '" value="' + j + '"><span>' + esc(o.label) + (o.description ? '<small>' + esc(o.description) + '</small>' : '') + '</span></label>').join('') +
+          (options.length && q.isOther ? '<label class="input-option"><input type="' + kind + '" name="q' + i + '" value="other">' + L('input.other') + '</label>' : '') +
           (!options.length || q.isOther ? '<input class="input" data-free type="' + (q.isSecret ? 'password' : 'text') + '" autocomplete="off" aria-label="' + esc(q.question) + '">' : '') + '</fieldset>';
       }).join('') + '<button class="btn accent" type="submit">' + L('input.submit') + '</button><div class="input-error" role="alert"></div></form>';
     }
@@ -707,14 +708,17 @@
     const answers = Object.create(null);
     for (const [i, q] of block.questions.entries()) {
       const field = form.querySelector('[data-question="' + i + '"]');
-      const option = field.querySelector('input[type=radio]:checked');
+      const checked = [...field.querySelectorAll('input[type=radio]:checked, input[type=checkbox]:checked')];
       const free = field.querySelector('[data-free]');
-      const value = option && option.value !== 'other' ? q.options[Number(option.value)].label : free && (!q.options || !q.options.length || q.isSecret || option) ? free.value : '';
-      if (!value || !value.trim()) {
+      const noOptions = !q.options || !q.options.length || q.isSecret;
+      const values = [];
+      for (const option of checked) if (option.value !== 'other') values.push(q.options[Number(option.value)].label);
+      if (free && (noOptions || checked.some((o) => o.value === 'other')) && free.value.trim()) values.push(free.value);
+      if (!values.length) {
         if (q.required === false) continue;
         form.querySelector('.input-error').textContent = L('input.answerAll'); return;
       }
-      answers[q.id] = { answers: [value] };
+      answers[q.id] = { answers: q.multiSelect ? values : [values[0]] };
     }
     inputSends.add(key);
     form.querySelectorAll('input, button').forEach((n) => { n.disabled = true; });

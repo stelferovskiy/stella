@@ -56,6 +56,10 @@ function describeTool(name, input) {
     case 'WebSearch': return { title: L('tool.webSearch', { query: short(input.query, 80) }), detail: '' };
     case 'WebFetch': return { title: L('tool.webFetch'), detail: input.url || '' };
     case 'Task': case 'Agent': return { title: L('tool.agent', { text: short(input.description, 80) }), detail: short(input.prompt, 600) };
+    case 'AskUserQuestion': {
+      const qs = Array.isArray(input.questions) ? input.questions : [];
+      return { title: L('bridge.question'), detail: qs.map((q) => '• ' + (q.question || '') + (Array.isArray(q.options) ? '\n' + q.options.map((o) => '   – ' + (o.label || '')).join('\n') : '')).join('\n') };
+    }
     case 'TodoWrite': {
       const todos = Array.isArray(input.todos) ? input.todos : [];
       return { title: L('tool.todo'), detail: todos.map((t) => (t.status === 'completed' ? '[x] ' : t.status === 'in_progress' ? '[>] ' : '[ ] ') + (t.content || t.activeForm || '')).join('\n') };
@@ -109,7 +113,7 @@ function partialField(json, key) {
   return { value: out, done: false };
 }
 
-async function run({ chat, text, attachments, settings, emit, emitLive, requestApproval, onSession, onLimit, registerSteer, abortController, mode }) {
+async function run({ chat, text, attachments, settings, emit, emitLive, requestApproval, requestUserInput, onSession, onLimit, registerSteer, abortController, mode }) {
   emitLive = emitLive || (() => {});
   const exe = findClaudeExe(settings);
   if (!exe) {
@@ -171,6 +175,19 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
     abortController,
     stderr: () => {},
     canUseTool: async (toolName, input, opts) => {
+      // AskUserQuestion is a question card, not a permission: show the choices and hand the answers back
+      // (keyed by question text, multi-select answers comma-separated, as Claude Code expects).
+      if (toolName === 'AskUserQuestion' && requestUserInput && input && Array.isArray(input.questions)) {
+        const qs = input.questions.map((q, i) => ({
+          id: 'q' + i, header: q.header || '', question: q.question || '', multiSelect: !!q.multiSelect, isOther: true,
+          options: (q.options || []).map((o) => ({ label: String(o.label || ''), description: o.description || '' }))
+        }));
+        const got = await requestUserInput({ questions: qs });
+        const answers = {};
+        qs.forEach((q, i) => { const v = got && got[q.id] && got[q.id].answers; if (v && v.length) answers[input.questions[i].question] = v.join(', '); });
+        if (!Object.keys(answers).length) return { behavior: 'deny', message: 'The user did not answer the question.' };
+        return { behavior: 'allow', updatedInput: Object.assign({}, input, { answers }) };
+      }
       const d = describeTool(toolName, input);
       const answer = await requestApproval({ title: opts && opts.title ? opts.title : d.title, detail: d.detail, reason: opts && opts.decisionReason });
       if (answer === 'deny') return { behavior: 'deny', message: 'The user denied this action.' };
