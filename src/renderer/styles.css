@@ -48,6 +48,7 @@ kbd { font-family: var(--mono); font-size: 10px; color: var(--dim); border: 1px 
 .tab { white-space: nowrap; min-height: 36px; padding: 0 16px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; font-family: var(--mono); }
 .tab:hover { color: var(--text); }
 .tab.on { background: #18204A; border-color: var(--accent); color: #F6F4EF; box-shadow: 0 0 18px rgba(var(--accent-rgb), .18); }
+.tab-purpose { width: auto; min-height: 36px; padding: 0 8px; border-color: var(--line); background: #18204A; color: var(--text); font-family: var(--mono); font-size: 12px; }
 .top-right { display: flex; align-items: center; gap: 14px; }
 .clockbox { text-align: right; }
 .clock { font-family: var(--display); font-size: 26px; font-weight: 300; letter-spacing: 2px; line-height: 1; }
@@ -212,6 +213,10 @@ textarea.input { padding: 8px 10px; resize: vertical; line-height: 1.45; }
 
 /* ---------- поле ввода ---------- */
 .composer { flex: none; width: min(900px, calc(100% - 40px)); margin: 0 auto 18px; border: 1px solid var(--line); border-radius: 14px; background: rgba(9,12,32,.92); box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 20px 50px rgba(0,0,0,.35); padding: 10px 10px 8px 14px; display: flex; flex-direction: column; gap: 6px; transition: border-color .2s, box-shadow .2s; }
+.purpose-prompt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid rgba(var(--accent-rgb), .45); border-radius: 8px; background: rgba(var(--accent-rgb), .08); font-size: 12px; }
+.purpose-prompt span { margin-right: auto; }
+.purpose-prompt button { min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel3); cursor: pointer; }
+.purpose-prompt button:hover { border-color: var(--accent); }
 .composer:focus-within { border-color: rgba(var(--accent-rgb), .6); box-shadow: 0 0 0 1px rgba(var(--accent-rgb), .15), 0 0 30px rgba(var(--accent-rgb), .12); }
 .composer textarea { width: 100%; resize: none; border: 0; background: transparent; outline: none; min-height: 24px; max-height: 240px; line-height: 1.5; font-size: 14.5px; padding: 4px 0; }
 .composer-bar { display: flex; align-items: center; gap: 8px; }

@@ -32,6 +32,7 @@
     tasks: init.tasks || [],
     env: init.env,
     agent: init.settings.agent || 'claude',
+    openAiPurpose: init.settings.openAiPurpose || (init.settings.agent === 'codex' ? 'codex' : 'auto'),
     chat: null,
     attachments: [],
     open: new Set(),
@@ -97,6 +98,7 @@
 
   /* ---------- тема агента ---------- */
   function viewAgent() { return S.chat ? S.chat.agent : S.agent; }
+  function isOpenAi(agent) { return agent === 'codex' || agent === 'chatgpt'; }
   // The home screen belongs to no agent: it takes the color of the star Stella.
   const HOME_THEME = { name: 'STELLA', sub: '', color: '#FFD58A', rgb: '255,213,138', glow: '#1B1530' };
   function applyTheme() {
@@ -106,7 +108,9 @@
     root.setProperty('--accent-rgb', a.rgb);
     root.setProperty('--glow', a.glow);
     orbBig.setColor(a.color); orbMini.setColor(a.color);
-    document.querySelectorAll('.tab[data-agent]').forEach((b) => b.classList.toggle('on', S.home ? false : S.gptImages ? b.dataset.agent === 'gpt-images' : S.studio ? b.dataset.agent === 'images' : b.dataset.agent === viewAgent()));
+    document.querySelectorAll('.tab[data-agent]').forEach((b) => b.classList.toggle('on', S.home ? false : S.gptImages ? b.dataset.agent === 'chatgpt' : S.studio ? b.dataset.agent === 'images' : isOpenAi(viewAgent()) ? b.dataset.agent === 'chatgpt' : b.dataset.agent === viewAgent()));
+    $('openAiPurpose').hidden = S.home || S.studio || (!S.gptImages && !isOpenAi(viewAgent()));
+    $('openAiPurpose').value = S.gptImages ? 'gpt-images' : S.chat && isOpenAi(S.chat.agent) ? S.chat.agent : S.openAiPurpose;
     if (orbStudio) orbStudio.setColor(AGENTS.images.color);
     $('heroName').textContent = a.name;
     $('heroSub').textContent = a.sub;
@@ -426,8 +430,12 @@
   $('openPlugins').addEventListener('click', openPlugins);
 
   document.querySelectorAll('.tab[data-agent]').forEach((b) => b.addEventListener('click', async () => {
-    if (b.dataset.agent === 'gpt-images') { window.StellaGptImages?.open(); return; }
     if (b.dataset.agent === 'images') { openStudio(); return; }
+    if (b.dataset.agent === 'chatgpt') {
+      if (S.openAiPurpose === 'gpt-images') { window.StellaGptImages?.open(); return; }
+      S.agent = S.openAiPurpose === 'codex' ? 'codex' : 'chatgpt';
+      saveSettings({ agent: S.agent }); openDraft(); return;
+    }
     if (S.studio || S.gptImages) { S.studio = false; S.gptImages = false; S.agent = b.dataset.agent; saveSettings({ agent: S.agent }); openDraft(); return; }
     S.agent = b.dataset.agent;
     saveSettings({ agent: S.agent });
@@ -435,6 +443,31 @@
     else applyTheme();
     $('input').focus();
   }));
+  async function setOpenAiPurpose(purpose, sendAfter) {
+    if (!['auto', 'chatgpt', 'codex', 'gpt-images'].includes(purpose)) return;
+    if (purpose === 'gpt-images' && S.attachments.length) {
+      $('openAiPurpose').value = S.chat && isOpenAi(S.chat.agent) ? S.chat.agent : S.openAiPurpose;
+      toast(L('openai.purpose.attachments'));
+      return;
+    }
+    const draft = S.gptImages ? $('gptImagesPrompt').value : $('input').value;
+    const attachments = S.attachments.slice();
+    S.openAiPurpose = purpose;
+    S.agent = purpose === 'codex' ? 'codex' : 'chatgpt';
+    await saveSettings({ openAiPurpose: purpose, agent: S.agent });
+    $('purposePrompt').hidden = true;
+    if (purpose === 'gpt-images') {
+      window.StellaGptImages?.open();
+      $('gptImagesPrompt').value = draft;
+      return;
+    }
+    openDraft();
+    S.attachments = attachments; renderAttachments();
+    $('input').value = draft; autosize();
+    if (sendAfter) submit();
+  }
+  $('openAiPurpose').addEventListener('change', (e) => setOpenAiPurpose(e.target.value, false));
+  $('purposePrompt').querySelectorAll('[data-purpose]').forEach((b) => b.addEventListener('click', () => setOpenAiPurpose(b.dataset.purpose, true)));
 
   /* ---------- проекты ---------- */
   function renderProject() {
@@ -692,7 +725,8 @@
   }
   function chooseAgent(agent) {
     S.agent = agent;
-    saveSettings({ agent });
+    if (isOpenAi(agent)) S.openAiPurpose = agent;
+    saveSettings({ agent, ...(isOpenAi(agent) ? { openAiPurpose: agent } : {}) });
     openDraft();
   }
   $('homeBtn').addEventListener('click', openHome);
@@ -704,6 +738,8 @@
     S.studio = false;
     S.gptImages = false;
     S.chat = null;
+    if (isOpenAi(S.agent)) S.agent = S.openAiPurpose === 'codex' ? 'codex' : 'chatgpt';
+    $('purposePrompt').hidden = true;
     S.attachments = [];
     renderAttachments();
     applyTheme();
@@ -724,6 +760,7 @@
     S.gptImages = false;
     S.chat = c;
     S.agent = c.agent;
+    $('purposePrompt').hidden = true;
     applyTheme();
     showHero(false);
     $('chatTitle').textContent = c.title;
@@ -735,7 +772,7 @@
     updateOrbs();
     $('input').focus();
   }
-  $('newChat').addEventListener('click', openDraft);
+  $('newChat').addEventListener('click', () => S.gptImages ? setOpenAiPurpose('auto', false) : openDraft());
 
   // переименование
   $('chatTitle').addEventListener('click', () => {
@@ -1114,6 +1151,22 @@
   async function submit(textOverride) {
     const text = (textOverride != null ? textOverride : $('input').value).trim();
     if (!text && !S.attachments.length) return;
+    if (!S.chat && isOpenAi(S.agent) && S.openAiPurpose === 'auto') {
+      const purpose = window.StellaOpenAiRoute.choosePurpose(text);
+      if (!purpose || (purpose === 'gpt-images' && S.attachments.length)) {
+        if (textOverride != null) { $('input').value = text; autosize(); }
+        $('purposePrompt').hidden = false;
+        return;
+      }
+      $('purposePrompt').hidden = true;
+      if (purpose === 'gpt-images') {
+        window.StellaGptImages?.open();
+        $('gptImagesPrompt').value = text;
+        return;
+      }
+      S.agent = purpose;
+      applyTheme();
+    }
     if (S.chat && S.states[S.chat.id] && !['idle', 'error'].includes(S.states[S.chat.id])) {
       // The agent is working: hand the text to the running task instead of refusing it.
       if (!text) { toast(L('chat.steerTextOnly')); return; }
@@ -1127,6 +1180,7 @@
     if (!S.chat) {
       const c = await api.createChat({ agent: S.agent, cwd: S.settings.currentProject });
       S.chat = c;
+      applyTheme();
       showHero(false);
       $('chatTitle').textContent = c.title;
       $('chatAgent').textContent = AGENTS[c.agent].label.toUpperCase();
@@ -2204,7 +2258,7 @@
 
   /* ---------- клавиатура ---------- */
   document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && !e.shiftKey && e.code === 'KeyN') { e.preventDefault(); openDraft(); }
+    if (e.ctrlKey && !e.shiftKey && e.code === 'KeyN') { e.preventDefault(); if (S.gptImages) setOpenAiPurpose('auto', false); else openDraft(); }
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyH') { e.preventDefault(); openHome(); }
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyK') { e.preventDefault(); $('search').focus(); }
     if (e.key === 'Escape') {

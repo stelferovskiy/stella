@@ -3,8 +3,8 @@
    с лимитами и совет, с кем начать. Данные о лимитах берутся из app.js (A.limitsFor). */
 (function () {
   const NS = 'http://www.w3.org/2000/svg';
-  const ORDER = ['claude', 'codex', 'chatgpt', 'deepseek', 'gemini', 'openrouter'];
-  const C = 300, TILT = 0.54, RADII = [112, 145, 178, 211, 244, 277];
+  const ORDER = ['claude', 'chatgpt', 'deepseek', 'gemini', 'openrouter'];
+  const C = 300, TILT = 0.54, RADII = [112, 145, 178, 211, 244];
   const STAR = '#FFD58A';
   const still = window.matchMedia('(prefers-reduced-motion: reduce)');
   const $ = (id) => document.getElementById(id);
@@ -88,7 +88,7 @@
       const w = infos[best].windows.reduce((m, x) => (x.remaining < m.remaining ? x : m));
       return { agent: best, text: L('home.pick.best', { agent: A.AGENTS[best].label, n: Math.round(w.remaining), window: w.label.toLowerCase() }) };
     }
-    const usual = A.S.settings.agent;
+    const usual = A.S.settings.agent === 'codex' ? 'chatgpt' : A.S.settings.agent;
     const pending = ORDER.filter((a) => infos[a].kind === 'pending');
     if (pending.length) {
       const a = pending.includes(usual) ? usual : pending[0];
