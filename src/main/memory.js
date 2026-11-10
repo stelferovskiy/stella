@@ -9,6 +9,7 @@ const { L } = require('./i18n');
 const MAX_STORE = 6000;    // сколько хранится на проект
 const MAX_CONTEXT = 2000;  // сколько читает новый чат (~600-700 токенов)
 const MAX_HANDOFF = 3200;  // выжимка при «перенести в новую сессию»
+const MAX_TRANSCRIPT = 14000; // выжимка + конец диалога при передаче другому агенту
 
 const clip = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
@@ -59,11 +60,39 @@ function createMemory(dir) {
     return lines.join('\n').slice(0, MAX_HANDOFF);
   }
 
+  // Handing the work to another agent: the digest plus the latest dialog itself, newest last, so the
+  // next agent sees what was asked, what was done and where it stopped. Bounded to MAX_TRANSCRIPT.
+  function transcript(chat) {
+    const head = digest(chat);
+    const lines = [];
+    for (const m of chat.messages) {
+      if (m.role === 'user') {
+        if (m.text) lines.push(L('memory.turnUser', { text: clip(m.text, 1500) }));
+        for (const a of m.attachments || []) lines.push(L('memory.turnFile', { file: a.path || a.name }));
+        continue;
+      }
+      for (const b of m.blocks || []) {
+        if (b.type === 'text' && b.text.trim()) lines.push(L('memory.turnAgent', { agent: m.agent || chat.agent, text: clip(b.text, 2000) }));
+        else if (b.type === 'tool') lines.push(L('memory.turnTool', { text: clip(b.title || b.name, 160) + (b.status === 'error' ? ' ✗' : '') }));
+        else if (b.type === 'error') lines.push(L('memory.turnError', { text: clip(b.text, 400) }));
+        else if (b.type === 'steer') lines.push(L('memory.turnUser', { text: clip(b.text, 800) }));
+      }
+    }
+    // Keep the end of the dialog: that is where the unfinished work is.
+    const room = MAX_TRANSCRIPT - head.length;
+    let body = '';
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (body.length + lines[i].length + 1 > room) { body = '…\n' + body; break; }
+      body = lines[i] + '\n' + body;
+    }
+    return head + '\n\n' + L('memory.dialog') + '\n' + body.trim();
+  }
+
   const wrap = (body, kind) => L('memory.contextHeader', { kind }) + '\n' + body + '\n' + L('memory.contextFooter') + '\n\n';
   const forNewChat = (cwd) => { const m = get(cwd).trim(); return m ? wrap(m.slice(0, MAX_CONTEXT), L('memory.kindNotes')) : ''; };
   const forHandoff = (handoff) => wrap(handoff, L('memory.kindHandoff'));
 
-  return { get, set, add, digest, forNewChat, forHandoff };
+  return { get, set, add, digest, transcript, forNewChat, forHandoff };
 }
 
 module.exports = { createMemory };

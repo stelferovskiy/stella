@@ -18,6 +18,10 @@ const { createMemory } = require('./src/main/memory');
 const { createUpdater } = require('./src/main/updater');
 const stellaDns = require('./src/main/dns');
 const accounts = require('./src/main/accounts');
+const chatExport = require('./src/main/chat-export');
+const AGENT_IDS = ['claude', 'codex', 'chatgpt', 'deepseek', 'gemini', 'openrouter'];
+// API keys besides the OpenAI one (settings.apiKeyEnc): settings.apiKeysEnc[provider], encrypted.
+const KEY_PROVIDERS = ['deepseek', 'gemini', 'openrouter'];
 
 app.setAppUserModelId('com.stella.desktop');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
@@ -51,8 +55,9 @@ function notify({ title, body, chatId, onlyIfHidden }) {
   n.show();
 }
 
-function getApiKey() {
-  const enc = store.getSettings().apiKeyEnc;
+function getApiKey(provider) {
+  const s = store.getSettings();
+  const enc = provider && provider !== 'chatgpt' ? (s.apiKeysEnc || {})[provider] : s.apiKeyEnc;
   if (!enc) return '';
   try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch (e) { return ''; }
 }
@@ -135,6 +140,9 @@ function publicSettings() {
   const s = Object.assign({}, store.getSettings());
   s.hasApiKey = !!s.apiKeyEnc;
   s.hasCfToken = !!s.cfTokenEnc;
+  s.hasKeys = { chatgpt: !!s.apiKeyEnc };
+  for (const p of KEY_PROVIDERS) s.hasKeys[p] = !!(s.apiKeysEnc && s.apiKeysEnc[p]);
+  delete s.apiKeysEnc;
   delete s.apiKeyEnc;
   delete s.cfTokenEnc;
   return s;
@@ -171,11 +179,11 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1480, height: 940, minWidth: 980, minHeight: 640,
     show: false,
-    backgroundColor: '#08080D',
+    backgroundColor: '#05071A',
     title: 'Stella',
     icon: fs.existsSync(ICON_ICO) ? ICON_ICO : ICON,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#08080D', symbolColor: '#C9C7D1', height: 44 },
+    titleBarOverlay: { color: '#05071A', symbolColor: '#C6C9E6', height: 44 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -191,8 +199,17 @@ function createWindow() {
     if (/^(https?:|mailto:)/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // The window only ever shows the app page: any other address (including other local files) is refused.
+  const page = (u) => String(u || '').split(/[?#]/)[0];
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://')) { e.preventDefault(); if (/^https?:/i.test(url)) shell.openExternal(url); }
+    const current = page(win.webContents.getURL());
+    if (current.startsWith('file://') && page(url) === current) return; // reload after a language switch
+    e.preventDefault();
+    if (/^https?:/i.test(url)) shell.openExternal(url);
+  });
+  // A reload (language switch) forgets the terminal tabs, so their shells must not keep running unseen.
+  win.webContents.on('did-start-navigation', (_e, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace && terms) terms.killAll();
   });
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools();
@@ -254,7 +271,7 @@ function wireIpc() {
 
   ipcMain.handle('settings:save', async (_e, patch) => {
     const safe = Object.assign({}, patch);
-    delete safe.apiKeyEnc; delete safe.hasApiKey; delete safe.cfTokenEnc; delete safe.hasCfToken;
+    delete safe.apiKeyEnc; delete safe.hasApiKey; delete safe.cfTokenEnc; delete safe.hasCfToken; delete safe.apiKeysEnc; delete safe.hasKeys;
     const before = store.getSettings();
     if (safe.dns !== undefined) safe.dns = sanitizeDns(safe.dns, before.dns);
     store.saveSettings(safe);
@@ -265,13 +282,19 @@ function wireIpc() {
     if (safe.language !== undefined && safe.language !== before.language) buildTrayMenu();
     return { settings: publicSettings(), hotkeyOk };
   });
-  ipcMain.handle('apikey:set', (_e, key) => {
+  ipcMain.handle('apikey:set', (_e, key, provider) => {
     key = String(key || '').trim();
-    if (!key) { store.saveSettings({ apiKeyEnc: '' }); return publicSettings(); }
+    const other = KEY_PROVIDERS.includes(provider);
+    const save = (enc) => store.saveSettings(other ? { apiKeysEnc: Object.assign({}, store.getSettings().apiKeysEnc, { [provider]: enc }) } : { apiKeyEnc: enc });
+    if (!key) { save(''); return publicSettings(); }
     const enc = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(key).toString('base64') : '';
     if (!enc) throw new Error(L('error.encryptionUnavailable'));
-    store.saveSettings({ apiKeyEnc: enc });
+    save(enc);
     return publicSettings();
+  });
+  ipcMain.handle('api:models', async (_e, provider) => {
+    if (!openaiProvider.API_AGENTS.includes(provider)) return [];
+    return openaiProvider.listModels(getApiKey(provider), provider);
   });
   ipcMain.handle('cf:setToken', (_e, token) => {
     token = String(token || '').trim();
@@ -321,8 +344,10 @@ function wireIpc() {
     return publicSettings();
   });
 
-  ipcMain.handle('chat:create', (_e, { agent, cwd }) => {
-    const c = store.createChat({ agent, cwd: cwd || store.getSettings().currentProject });
+  ipcMain.handle('chat:create', (_e, opts) => {
+    const { agent, cwd } = opts || {};
+    // An unknown agent would be saved into the chat list and break drawing it on every start.
+    const c = store.createChat({ agent: AGENT_IDS.includes(agent) ? agent : 'claude', cwd: typeof cwd === 'string' && cwd ? cwd : store.getSettings().currentProject });
     broadcast('chats:changed', store.saveChat(c));
     return c;
   });
@@ -343,6 +368,39 @@ function wireIpc() {
   ipcMain.handle('memory:set', (_e, cwd, text) => memory.set(cwd, text));
   ipcMain.handle('chat:get', (_e, id) => store.getChat(id));
   ipcMain.handle('chat:delete', (_e, id) => { runner.stop(id); store.deleteChat(id); return store.listChats(); });
+  ipcMain.handle('chat:deleteMany', (_e, ids) => {
+    for (const id of Array.isArray(ids) ? ids.slice(0, 1000) : []) { runner.stop(id); store.deleteChat(id); }
+    return store.listChats();
+  });
+  ipcMain.handle('chat:mark', (_e, ids, patch) => {
+    const clean = {};
+    if (patch && typeof patch.pinned === 'boolean') clean.pinned = patch.pinned;
+    if (patch && typeof patch.archived === 'boolean') clean.archived = patch.archived;
+    for (const id of (Array.isArray(ids) ? ids : [ids]).slice(0, 1000)) { const s = store.markChat(id, clean); if (s) broadcast('chats:changed', s); }
+    return store.listChats();
+  });
+  ipcMain.handle('chats:search', (_e, q) => store.searchChats(String(q || '').slice(0, 200)));
+  ipcMain.handle('chat:export', async (_e, id) => {
+    const c = store.getChat(id);
+    if (!c) return { ok: false };
+    const r = await dialog.showSaveDialog(win, { title: L('export.dialogTitle'), defaultPath: path.join(app.getPath('documents'), chatExport.fileName(c)), filters: [{ name: 'Markdown', extensions: ['md'] }] });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    try { fs.writeFileSync(r.filePath, chatExport.toMarkdown(c), 'utf8'); return { ok: true, path: r.filePath }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+  // «Передать другому агенту»: the dialog so far goes to a new chat of the chosen agent in the same
+  // folder, and that agent is asked to carry on right away. The old chat stays as it was.
+  ipcMain.handle('chat:handoff', (_e, id, agent) => {
+    const old = store.getChat(id);
+    if (!old || !old.messages.length || !AGENT_IDS.includes(agent)) return null;
+    if (runner.isRunning(id)) throw new Error(L('chat.waitOrStop'));
+    const c = store.createChat({ agent, cwd: old.cwd, title: '↪ ' + String(old.title || '').replace(/^↪\s*/, '') });
+    c.handoff = memory.transcript(old);
+    c.handoffFrom = { id: old.id, agent: old.agent };
+    broadcast('chats:changed', store.saveChat(c));
+    runner.send(c.id, { text: L('handoff.prompt', { agent: chatExport.agentName(old.agent) }) }).catch((err) => broadcast('toast', String(err.message || err)));
+    return c;
+  });
   ipcMain.handle('chat:rename', (_e, id, title) => {
     const c = store.getChat(id);
     if (!c) return null;

@@ -8,9 +8,11 @@ const claudeProvider = require('./providers/claude');
 const codexProvider = require('./providers/codex');
 const { L } = require('./i18n');
 
-const ID_RE = /^[\w.@\-]+$/;                 // plugin или plugin@marketplace
-const SRC_RE = /^[\w.@:\/\\-~+%?=&#]+$/;     // owner/repo, URL или путь
-const NAME_RE = /^[\w.\-]+$/;
+// A value never starts with "-": it would be read by the CLI as an option, not as a name.
+const ID_RE = /^(?!-)[\w.@\-]+$/;                 // plugin или plugin@marketplace
+// The dash goes last: in the middle ("\\-~") it was a range that also let through | ^ ` { } [ ].
+const SRC_RE = /^(?!-)[\w.@:\/\\~+%?=&#-]+$/;     // owner/repo, URL или путь
+const NAME_RE = /^(?!-)[\w.\-]+$/;
 
 function run(file, args, { env, timeout = 240000 } = {}) {
   return new Promise((resolve) => {

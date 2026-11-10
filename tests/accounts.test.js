@@ -109,4 +109,28 @@ test('codex shares config.toml and skills', () => {
   assert.ok(fs.existsSync(path.join(h2, 'skills', 's', 'SKILL.md')));
 });
 
+test('with no sync snapshot the empty side never wipes the other account', () => {
+  const h1 = path.join(tmp, 'codex-1'), h2 = path.join(tmp, 'data', 'accounts', 'codex-2');
+  // Slot 2 is active and has neither file; the snapshot is gone (lost state file or a newly shared item).
+  fs.rmSync(path.join(tmp, 'data', 'accounts', 'codex-shared.json'), { force: true });
+  fs.rmSync(path.join(h2, 'config.toml'), { force: true });
+  write(path.join(h1, 'AGENTS.md'), 'rules of slot 1');
+  accounts.syncShared('codex', 2);
+  assert.strictEqual(fs.readFileSync(path.join(h1, 'AGENTS.md'), 'utf8'), 'rules of slot 1');
+  assert.strictEqual(fs.readFileSync(path.join(h2, 'AGENTS.md'), 'utf8'), 'rules of slot 1');
+  assert.ok(fs.existsSync(path.join(h1, 'config.toml')));
+  // With a snapshot, a deliberate removal under the active slot still goes through.
+  fs.rmSync(path.join(h2, 'AGENTS.md'));
+  accounts.syncShared('codex', 2);
+  assert.ok(!fs.existsSync(path.join(h1, 'AGENTS.md')));
+
+  const c1 = path.join(tmp, 'claude-1'), c2 = path.join(tmp, 'data', 'accounts', 'claude-2');
+  fs.rmSync(path.join(tmp, 'data', 'accounts', 'claude-shared.json'), { force: true });
+  write(path.join(c1, '.claude.json'), { mcpServers: { srv: { command: 'x' } } });
+  write(path.join(c2, '.claude.json'), { oauthAccount: { emailAddress: 'second@b.c' } });
+  accounts.syncShared('claude', 2);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(c1, '.claude.json'), 'utf8')).mcpServers, { srv: { command: 'x' } });
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(c2, '.claude.json'), 'utf8')).mcpServers, { srv: { command: 'x' } });
+});
+
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));

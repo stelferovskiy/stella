@@ -220,6 +220,9 @@ function startProxy(getResolver) {
       const up = await connectAny(addrs, hp.port);
       up.on('error', () => client.destroy());
       client.on('error', () => up.destroy());
+      // A side that goes away without a clean end must take the other with it, or sockets pile up.
+      up.on('close', () => client.destroy());
+      client.on('close', () => up.destroy());
       client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (head && head.length) up.write(head);
       up.pipe(client); client.pipe(up);

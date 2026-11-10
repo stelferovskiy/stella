@@ -7,6 +7,8 @@ const { L } = require('./i18n');
 const claude = require('./providers/claude');
 const codex = require('./providers/codex');
 const openai = require('./providers/openai');
+// Agents that talk to an API with the user's key: conversation only, no project files.
+const isApiAgent = (agent, settings) => ['deepseek', 'gemini', 'openrouter'].includes(agent) || (agent === 'chatgpt' && settings.chatgpt.backend === 'api');
 const accounts = require('./accounts');
 
 const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
@@ -73,13 +75,15 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
     const atts = prepareAttachments(chatId, attachments);
     const userMsg = { id: crypto.randomUUID(), role: 'user', text: text || '', attachments: atts, time: Date.now() };
     const msg = { id: crypto.randomUUID(), role: 'assistant', agent: chat.agent, blocks: [], status: 'running', time: Date.now() };
-    if (!chat.messages.length) chat.title = makeTitle(text || (atts[0] && atts[0].name));
+    // A chat carried over from another one keeps its "↪ …" title instead of taking the service prompt.
+    if (!chat.messages.length && !chat.handoff) chat.title = makeTitle(text || (atts[0] && atts[0].name));
     chat.messages.push(userMsg, msg);
     const historyIndex = chat.messages.length - 2;
     // Локальная память: в первое сообщение нового чата подмешиваем сжатый контекст (в историю чата он не пишется).
     let promptText = text;
-    if (historyIndex === 0 && memory && store.getSettings().memoryEnabled !== false) {
-      const ctx = chat.handoff ? memory.forHandoff(chat.handoff) : memory.forNewChat(chat.cwd);
+    // A handoff (new session or another agent) is always passed on; project notes only when memory is on.
+    if (historyIndex === 0 && memory) {
+      const ctx = chat.handoff ? memory.forHandoff(chat.handoff) : store.getSettings().memoryEnabled !== false ? memory.forNewChat(chat.cwd) : '';
       if (ctx) promptText = ctx + (text || '');
     }
     if (account.context) promptText = account.context + (promptText || '');
@@ -112,7 +116,7 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
     let watcher = null;
     const fsTimers = new Map();
     const WATCH_EXT = /\.(html?|css|js|ts|tsx|jsx|svg|png|jpe?g|gif|webp|md|txt|json|ya?ml|toml|xml|ini|py|rs|go|c|cpp|h|java|cs|ps1|sh|sql|vue|svelte)$/i;
-    if (chat.agent !== 'chatgpt' || settings.chatgpt.backend !== 'api') {
+    if (!isApiAgent(chat.agent, settings)) {
       try {
         watcher = fs.watch(chat.cwd, { recursive: true }, (_ev, name) => {
           if (!name || !WATCH_EXT.test(name) || /(^|[\\/])(node_modules|\.git|\.codex|\.claude|AppData|dist)([\\/]|$)/i.test(name)) return;
@@ -184,12 +188,12 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
         });
       } else if (chat.agent === 'codex') {
         result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, registerSteer, abortController, mode, flavor: 'codex', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+      } else if (isApiAgent(chat.agent, settings)) {
+        result = await openai.run({ chat, text: promptText, attachments: atts, settings, apiKey: getApiKey(chat.agent), emit, abortController, historyIndex, provider: chat.agent });
       } else if (chat.agent === 'chatgpt') {
-        if (settings.chatgpt.backend === 'api') {
-          result = await openai.run({ chat, text: promptText, attachments: atts, settings, apiKey: getApiKey(), emit, abortController, historyIndex });
-        } else {
-          result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, registerSteer, abortController, mode: mode || settings.chatgpt.sandbox || 'workspace-write', flavor: 'chatgpt', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
-        }
+        result = await codex.run({ chat, text: promptText, attachments: atts, settings, emit, emitLive, requestApproval, requestUserInput, onRequestResolved, onLimit, registerSteer, abortController, mode: mode || settings.chatgpt.sandbox || 'workspace-write', flavor: 'chatgpt', resumeFallback: account.resumeFallback, onThread: (id) => { chat.codexThread = id; scheduleSave(); } });
+      } else {
+        emit({ t: 'error', text: L('error.unknownAgent', { agent: String(chat.agent) }) });
       }
     } catch (err) {
       emit({ t: 'error', text: L('error.failure', { message: err && err.message || err }) });
@@ -212,20 +216,28 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
     const status = abortController.signal.aborted ? 'stopped' : (result.status || 'done');
     reducer.apply(msg, { t: 'done', status, usage: result.usage });
     broadcast('chat:event', { chatId, msgId: msg.id, ev: { t: 'done', status, usage: result.usage } });
-    if (result.usage) { store.addUsage(chat.agent, result.usage); broadcast('usage:changed', store.getUsage()); }
+    // The chat must leave the running set even if writing usage fails (full disk), or it stays busy forever.
     active.delete(chatId);
+    if (result.usage) { try { store.addUsage(chat.agent, result.usage); broadcast('usage:changed', store.getUsage()); } catch (e) {} }
     entry.steer = null;
     setState(chatId, status === 'error' ? 'error' : 'idle');
     // Messages that could not join the running turn go out as the next message, unless the user pressed Stop.
     const queued = entry.queue.splice(0);
-    if (queued.length) {
+    // A chat deleted during the run has nothing to send the queued text to.
+    if (queued.length && store.getChat(chatId)) {
       if (status === 'stopped') broadcast('toast', L('chat.steerDropped'));
       else setTimeout(() => send(chatId, { text: queued.join('\n\n') }).catch((err) => broadcast('toast', String(err.message || err))), 0);
     }
+    // Out of limits: the chat can be handed to another agent (button under the reply).
+    if (status === 'error' && result.limitHit) { reducer.apply(msg, { t: 'limit' }); broadcast('chat:event', { chatId, msgId: msg.id, ev: { t: 'limit' } }); }
     if (status === 'error' && result.limitHit && account.provider && onAccountLimit) {
       Promise.resolve().then(() => onAccountLimit({ chatId, provider: account.provider, from: account.slot })).catch(() => {});
     }
-    broadcast('chats:changed', store.saveChat(chat));
+    // null: the chat was deleted while this run was finishing.
+    let saved = null;
+    try { saved = store.saveChat(chat); } catch (e) { broadcast('toast', String(e && e.message || e)); }
+    if (!saved) return status;
+    broadcast('chats:changed', saved);
 
     if (status === 'done') {
       const firstText = (msg.blocks.find((b) => b.type === 'text') || {}).text || L('notify.done');

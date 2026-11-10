@@ -6,20 +6,33 @@
 
   function safeUrl(u) {
     const url = u.replace(/&amp;/g, '&').trim();
-    return /^(https?:\/\/|mailto:)/i.test(url) ? esc(url) : null;
+    // A placeholder inside an address would be expanded into a tag inside the href attribute.
+    return /^(https?:\/\/|mailto:)/i.test(url) && !url.includes('\u0000') ? esc(url) : null;
   }
 
   function inline(text) {
     // text уже экранирован
-    const codes = [];
-    let s = text.replace(/`([^`\n]+)`/g, (_, c) => { codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; });
-    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, u) => { const url = safeUrl(u); return url ? '<a href="' + url + '" target="_blank" rel="noopener">' + (alt || url) + '</a>' : m; });
-    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => { const url = safeUrl(u); return url ? '<a href="' + url + '" target="_blank" rel="noopener">' + t + '</a>' : m; });
-    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (m, pre, u) => pre + '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>');
+    // Generated tags are parked behind placeholders so later passes (auto-links, emphasis) can never
+    // rewrite the inside of a tag: a URL inside an href used to be auto-linked again, which broke out
+    // of the attribute and let message text add its own attributes to the link.
+    const stash = [];
+    const keep = (html) => { stash.push(html); return '\u0000' + (stash.length - 1) + '\u0000'; };
+    const open = (url) => keep('<a href="' + url + '" target="_blank" rel="noopener">');
+    const close = () => keep('</a>');
+    let s = text.replace(/\u0000/g, ''); // the source must not be able to forge a placeholder
+    s = s.replace(/`([^`\n]+)`/g, (_, c) => keep('<code>' + c + '</code>'));
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, u) => { const url = safeUrl(u); return url ? open(url) + (alt || keep(url)) + close() : m; });
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => { const url = safeUrl(u); return url ? open(url) + t + close() : m; });
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)\u0000]+)/g, (m, pre, u) => {
+      const end = (u.match(/[.,:!?]+$/) || [''])[0]; // sentence punctuation is not part of the address
+      if (end) u = u.slice(0, -end.length);
+      return pre + keep('<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>') + end;
+    });
     s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
     s = s.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>').replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
     s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
-    s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => '<code>' + codes[+i] + '</code>');
+    // One pass only: parked HTML never contains a placeholder, so it is never scanned again.
+    s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => stash[+i] || '');
     return s;
   }
 

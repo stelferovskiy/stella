@@ -10,7 +10,7 @@ function createScheduler({ store, runner, broadcast, notify }) {
 
   function runTask(task) {
     const settings = store.getSettings();
-    const chat = store.createChat({ agent: task.agent || 'claude', cwd: task.cwd || settings.currentProject, title: L('schedule.chatTitle', { name: task.name }), scheduled: true });
+    const chat = store.createChat({ agent: ['claude', 'codex', 'chatgpt', 'deepseek', 'gemini', 'openrouter'].includes(task.agent) ? task.agent : 'claude', cwd: task.cwd || settings.currentProject, title: L('schedule.chatTitle', { name: task.name }), scheduled: true });
     broadcast('chats:changed', store.saveChat(chat));
     notify({ title: L('notify.taskStarting'), body: task.name, chatId: chat.id, onlyIfHidden: true });
     runner.send(chat.id, { text: task.prompt, attachments: [], mode: task.mode || undefined }).catch(() => {});
@@ -26,7 +26,7 @@ function createScheduler({ store, runner, broadcast, notify }) {
     const tasks = store.getTasks();
     let changed = false;
     for (const t of tasks) {
-      if (!t.enabled || t.time !== hhmm) continue;
+      if (!t || !t.enabled || t.time !== hhmm || !t.prompt) continue;
       if (Array.isArray(t.days) && t.days.length && t.days.indexOf(now.getDay()) === -1) continue;
       if (t.lastRun === stamp(now)) continue;
       t.lastRun = stamp(now);

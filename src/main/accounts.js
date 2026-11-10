@@ -186,13 +186,16 @@ function writeMcp(slot, value) {
   fs.writeFileSync(tmp, JSON.stringify(j, null, 2));
   fs.renameSync(tmp, file);
 }
-function syncValue(state, key, a, b, prefer) {
+function syncValue(state, key, a, b, prefer, isEmpty) {
   const base = state[key];
   let v = null;
   if (a.value === b.value) v = a.value;
   else {
     const ca = a.value !== base, cb = b.value !== base;
-    const winner = ca && !cb ? a : cb && !ca ? b : prefer === 2 ? b : a;
+    let winner = ca && !cb ? a : cb && !ca ? b : prefer === 2 ? b : a;
+    // No snapshot yet (first sync, lost state file, an item that only now became shared): nothing says
+    // the empty side was emptied on purpose, so an existing file or server list is never wiped by it.
+    if (base === undefined && isEmpty && isEmpty(winner.value) && !isEmpty((winner === a ? b : a).value)) winner = winner === a ? b : a;
     const loser = winner === a ? b : a;
     loser.write(winner.value); v = winner.value;
   }
@@ -210,10 +213,10 @@ function syncShared(provider, prefer) {
   const state = readJson(stateFile) || {};
   for (const f of conf.files) {
     const p1 = path.join(s1, f), p2 = path.join(s2, f);
-    try { syncValue(state, 'file:' + f, { value: readText(p1), write: (v) => writeText(p1, v) }, { value: readText(p2), write: (v) => writeText(p2, v) }, prefer); } catch (e) {}
+    try { syncValue(state, 'file:' + f, { value: readText(p1), write: (v) => writeText(p1, v) }, { value: readText(p2), write: (v) => writeText(p2, v) }, prefer, (v) => v == null); } catch (e) {}
   }
   if (provider === 'claude') {
-    try { syncValue(state, 'mcp', { value: readMcp(1), write: (v) => writeMcp(1, v) }, { value: readMcp(2), write: (v) => writeMcp(2, v) }, prefer); } catch (e) {}
+    try { syncValue(state, 'mcp', { value: readMcp(1), write: (v) => writeMcp(1, v) }, { value: readMcp(2), write: (v) => writeMcp(2, v) }, prefer, (v) => v === '{}'); } catch (e) {}
   }
   try { writeText(stateFile, JSON.stringify(state)); } catch (e) {}
   return true;

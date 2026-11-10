@@ -13,6 +13,8 @@ function createTerminals({ broadcast }) {
     const args = isWin
       ? (command ? ['-NoLogo', '-NoExit', '-Command', command] : ['-NoLogo'])
       : (command ? ['-lc', command + '; exec ' + sh] : ['-l']);
+    // After the window reloads (language switch) ids start over; the shell that held this id goes away.
+    kill(id);
     let p;
     try {
       p = loadPty().spawn(sh, args, {
@@ -26,8 +28,9 @@ function createTerminals({ broadcast }) {
       return { ok: false, error: String(err && err.message || err) };
     }
     terms.set(id, p);
-    p.onData((data) => broadcast('term:data', { id, data }));
-    p.onExit(({ exitCode }) => { terms.delete(id); broadcast('term:exit', { id, exitCode }); });
+    // A replaced shell still reports its last output and exit; neither belongs to the new one.
+    p.onData((data) => { if (terms.get(id) === p) broadcast('term:data', { id, data }); });
+    p.onExit(({ exitCode }) => { if (terms.get(id) !== p) return; terms.delete(id); broadcast('term:exit', { id, exitCode }); });
     return { ok: true };
   }
   function write(id, data) { const p = terms.get(id); if (p) p.write(data); }

@@ -14,7 +14,7 @@ const ROOT = path.join(__dirname, '..');
 const CYR = /[А-Яа-яЁё]/;
 const IGNORE = [/^src[\\/]locales[\\/]/, /^tools[\\/]/];
 // Keys built at runtime from a prefix: L('effort.' + level), L('skill.' + id + '.label') and so on.
-const DYNAMIC = [/^skill\./, /^directive\.(signIn|addFolder|customizeSkills)$/, /^effort\./, /^day\.\d$/, /^gptImages\.aspect\./];
+const DYNAMIC = [/^skill\./, /^directive\.(signIn|addFolder|customizeSkills)$/, /^effort\./, /^day\.\d$/, /^gptImages\.aspect\./, /^settings\.apiKey\.hint\./, /^home\.greet\./];
 const ATTR_RE = /data-i18n(?:-title|-placeholder|-aria)?="([\w.]+)"/g;
 
 const loc = { ru: readJson('src/locales/ru.json'), en: readJson('src/locales/en.json') };

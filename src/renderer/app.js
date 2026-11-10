@@ -10,6 +10,9 @@
     claude: { name: 'CLAUDE', label: 'Claude', sub: L('agent.claude.sub'), color: '#E0875F', rgb: '224,135,95', glow: '#2A1620' },
     codex: { name: 'CODEX', label: 'Codex', sub: L('agent.codex.sub'), color: '#5FB8C9', rgb: '95,184,201', glow: '#0E2329' },
     chatgpt: { name: 'CHATGPT', label: 'ChatGPT', sub: L('agent.chatgpt.sub'), color: '#6FD3A0', rgb: '111,211,160', glow: '#0F241A' },
+    deepseek: { name: 'DEEPSEEK', label: 'DeepSeek', sub: L('agent.deepseek.sub'), color: '#6B86FF', rgb: '107,134,255', glow: '#10162E' },
+    gemini: { name: 'GEMINI', label: 'Gemini', sub: L('agent.gemini.sub'), color: '#E58AC0', rgb: '229,138,192', glow: '#2A1424' },
+    openrouter: { name: 'OPENROUTER', label: 'OpenRouter', sub: L('agent.openrouter.sub'), color: '#C9A86A', rgb: '201,168,106', glow: '#261F12' },
     images: { name: L('studio.title'), label: L('studio.tab'), sub: 'FLUX · CLOUDFLARE', color: '#A98BFF', rgb: '169,139,255', glow: '#1A1430' }
   };
   const MODES = {
@@ -94,14 +97,16 @@
 
   /* ---------- тема агента ---------- */
   function viewAgent() { return S.chat ? S.chat.agent : S.agent; }
+  // The home screen belongs to no agent: it takes the color of the star Stella.
+  const HOME_THEME = { name: 'STELLA', sub: '', color: '#FFD58A', rgb: '255,213,138', glow: '#1B1530' };
   function applyTheme() {
-    const a = S.gptImages ? { ...AGENTS.chatgpt, name: "GPT IMAGES", sub: "CHATGPT · CODEX" } : S.studio ? AGENTS.images : AGENTS[viewAgent()];
+    const a = S.home ? HOME_THEME : S.gptImages ? { ...AGENTS.chatgpt, name: "GPT IMAGES", sub: "CHATGPT · CODEX" } : S.studio ? AGENTS.images : AGENTS[viewAgent()];
     const root = document.documentElement.style;
     root.setProperty('--accent', a.color);
     root.setProperty('--accent-rgb', a.rgb);
     root.setProperty('--glow', a.glow);
     orbBig.setColor(a.color); orbMini.setColor(a.color);
-    document.querySelectorAll('.tab[data-agent]').forEach((b) => b.classList.toggle('on', S.gptImages ? b.dataset.agent === 'gpt-images' : S.studio ? b.dataset.agent === 'images' : b.dataset.agent === viewAgent()));
+    document.querySelectorAll('.tab[data-agent]').forEach((b) => b.classList.toggle('on', S.home ? false : S.gptImages ? b.dataset.agent === 'gpt-images' : S.studio ? b.dataset.agent === 'images' : b.dataset.agent === viewAgent()));
     if (orbStudio) orbStudio.setColor(AGENTS.images.color);
     $('heroName').textContent = a.name;
     $('heroSub').textContent = a.sub;
@@ -114,9 +119,9 @@
     const agent = viewAgent();
     const sel = $('modeSelect');
     sel.textContent = '';
-    if (agent === 'chatgpt' && S.settings.chatgpt.backend === 'api') {
+    if (isApiChat(agent)) {
       const o = document.createElement('option');
-      o.textContent = S.settings.chatgpt.backend === 'api' ? L('mode.viaApiKey') : L('mode.viaAccount');
+      o.textContent = L('mode.viaApiKey');
       sel.append(o);
       sel.disabled = true;
       return;
@@ -146,8 +151,21 @@
     codex: { models: [MODEL_AUTO, ['gpt-5-codex', 'GPT-5 Codex'], ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini']],
       efforts: [EFFORT_OFF, effort('minimal'), effort('low'), effort('medium'), effort('high')] },
     chatgpt: { models: [MODEL_AUTO, ['gpt-5', 'GPT-5'], ['gpt-5-mini', 'GPT-5 mini'], ['gpt-4.1', 'GPT-4.1']],
-      efforts: [EFFORT_OFF, effort('minimal'), effort('low'), effort('medium'), effort('high')] }
+      efforts: [EFFORT_OFF, effort('minimal'), effort('low'), effort('medium'), effort('high')] },
+    // Model ids come from the provider's /models list once a key is saved.
+    deepseek: { models: [MODEL_AUTO], efforts: [EFFORT_OFF] },
+    gemini: { models: [MODEL_AUTO], efforts: [EFFORT_OFF, effort('low'), effort('medium'), effort('high')] },
+    openrouter: { models: [MODEL_AUTO], efforts: [EFFORT_OFF, effort('low'), effort('medium'), effort('high')] }
   };
+  const KEY_AGENTS = ['deepseek', 'gemini', 'openrouter'];
+  const apiCatalog = {}; // agent -> model ids | 'pending' | 'failed'
+  function loadApiCatalog(agent, force) {
+    if (!KEY_AGENTS.includes(agent) || !(S.settings.hasKeys && S.settings.hasKeys[agent])) return;
+    if (!force && apiCatalog[agent]) return;
+    apiCatalog[agent] = 'pending';
+    api.apiModels(agent).then((list) => { apiCatalog[agent] = Array.isArray(list) ? list : 'failed'; }, () => { apiCatalog[agent] = 'failed'; })
+      .then(() => { if (viewAgent() === agent) renderModelSelects(); });
+  }
   function modelKey(agent) { return agent === 'chatgpt' && S.settings.chatgpt.backend === 'api' ? 'apiModel' : 'model'; }
   function fillSelect(sel, list, cur) {
     sel.textContent = '';
@@ -159,7 +177,48 @@
   let catalogError = '';
   let codexAccount = null;
   let catalogRequest = 0;
-  function isApiChat(agent) { return agent === 'chatgpt' && S.settings.chatgpt.backend === 'api'; }
+  // Agents that answer through an API key: a conversation without project files or tools.
+  function isApiChat(agent) { return KEY_AGENTS.includes(agent) || (agent === 'chatgpt' && S.settings.chatgpt.backend === 'api'); }
+  // Whether an agent can take a task right now (installed, signed in or has a key).
+  function agentReady(agent) {
+    if (agent === 'claude') return !!(S.env.claudeExe && S.env.claudeSdk);
+    if (agent === 'codex') return !!S.env.codexJs;
+    if (agent === 'chatgpt') return S.settings.chatgpt.backend === 'api' ? !!S.settings.hasApiKey : !!S.env.codexJs;
+    return !!(S.settings.hasKeys && S.settings.hasKeys[agent]);
+  }
+  // Limits of one agent for the home screen: windows with the share still left (0..100).
+  // kind: quota (known limits) | pending (known after a reply) | key (API key) | nokey | missing.
+  function limitsFor(agent) {
+    const ready = agentReady(agent);
+    const week = (S.usage && S.usage.week || {})[agent];
+    if (isApiChat(agent)) return { ready, kind: ready ? 'key' : 'nokey', windows: [], week };
+    if (!ready) return { ready, kind: 'missing', windows: [], week };
+    const clamp = (v) => Math.max(0, Math.min(100, v));
+    const toMs = (r) => (r == null ? 0 : typeof r === 'number' ? r * (r < 1e12 ? 1000 : 1) : Date.parse(r) || 0);
+    const windows = [];
+    if (agent === 'claude') {
+      const CL = (S.usage.limits && S.usage.limits.claude) || {};
+      for (const [k, label] of [['five_hour', L('limits.fiveHours')], ['seven_day', L('limits.sevenDays')]]) {
+        const info = CL[k];
+        if (!info) continue;
+        let pct = info.utilization;
+        if (pct == null) pct = info.status === 'rejected' ? 100 : null;
+        else if (pct <= 1) pct *= 100;
+        if (pct != null) windows.push({ label, remaining: clamp(100 - pct), resetsAt: toMs(info.resetsAt) });
+      }
+    } else {
+      const lim = accountLimits(agent) || {};
+      for (const key of ['primary', 'secondary']) {
+        const info = lim[key];
+        if (!info || !Number.isFinite(info.usedPercent)) continue;
+        const mins = info.windowDurationMins;
+        const label = mins === 300 ? L('limits.fiveHours') : mins === 10080 ? L('limits.sevenDays') : Number.isFinite(mins) && mins > 0 ? L('limits.minutes', { n: mins }) : key === 'primary' ? L('limits.primary') : L('limits.secondary');
+        windows.push({ label, remaining: clamp(100 - info.usedPercent), resetsAt: toMs(info.resetsAt) });
+      }
+    }
+    return { ready, kind: windows.length ? 'quota' : 'pending', windows, week };
+  }
+  function modeFor(agent) { return agent === 'claude' ? S.settings.claude.permissionMode : usesCodex(agent) ? (S.settings[agent].sandbox || 'workspace-write') : undefined; }
   function usesCodex(agent) { return agent === 'codex' || (agent === 'chatgpt' && S.settings.chatgpt.backend !== 'api'); }
   // Claude: the list comes from Claude Code for the signed-in account, so new models (and ones a
   // plan unlocks) appear without a Stella update. Until it loads, or if it fails, the static list stays.
@@ -198,7 +257,10 @@
     if (agent === 'claude' && claudeCatalog) return renderClaudeSelects(cfg, selected);
     const dynamic = usesCodex(agent);
     const catalog = codexCatalog || [];
-    const models = dynamic ? [MODEL_AUTO].concat(catalog.map((m) => [m.model || m.id, m.displayName || m.model || m.id])) : ML.models;
+    loadApiCatalog(agent);
+    const keyed = KEY_AGENTS.includes(agent) && Array.isArray(apiCatalog[agent]) ? apiCatalog[agent] : null;
+    const models = dynamic ? [MODEL_AUTO].concat(catalog.map((m) => [m.model || m.id, m.displayName || m.model || m.id])) : keyed ? [MODEL_AUTO].concat(keyed.map((id) => [id, /:free$/.test(id) ? id.replace(/:free$/, '') + ' · ' + L('model.free') : id])) : ML.models;
+    $('effortSelect').hidden = !dynamic && ML.efforts.length < 2;
     const model = selected ? catalog.find((m) => (m.model || m.id) === selected) : catalog.find((m) => m.isDefault) || catalog[0];
     const efforts = dynamic ? [EFFORT_OFF].concat((model && model.supportedReasoningEfforts || []).map((e) => [e.reasoningEffort, L.has('effort.' + e.reasoningEffort) ? L('effort.' + e.reasoningEffort) : e.reasoningEffort])) : ML.efforts;
     fillSelect($('modelSelect'), models, selected);
@@ -237,6 +299,7 @@
     $('modelSelect').title = model ? model.description : '';
     fillSelect($('effortSelect'), efforts, cfg.effort || '');
     $('effortSelect').title = '';
+    $('effortSelect').hidden = false;
     const warning = $('codexModelWarning');
     if (warning) { warning.textContent = ''; warning.hidden = true; }
   }
@@ -431,63 +494,176 @@
     if (t >= start - 6 * 86400000) return L('group.week');
     return L('group.earlier');
   }
+  // Search: titles match at once; message text is searched in the main process (debounced).
+  let searchHits = null, searchSeq = 0, searchTimer = 0;
+  // Bulk actions and the archive view.
+  const selected = new Set();
+  let selecting = false, showArchive = false;
+  function runSearch() {
+    clearTimeout(searchTimer);
+    const q = S.search.trim();
+    if (q.length < 2) { searchSeq++; searchHits = null; renderChatList(); return; }
+    renderChatList();
+    searchTimer = setTimeout(async () => {
+      const seq = ++searchSeq;
+      let r = [];
+      try { r = await api.searchChats(q); } catch (e) {}
+      if (seq !== searchSeq || q !== S.search.trim()) return;
+      searchHits = new Map(r.map((x) => [x.id, x]));
+      renderChatList();
+    }, 180);
+  }
+  const ICON = {
+    pin: 'M9 4h6l-1 6 4 4H6l4-4zM12 14v6',
+    archive: 'M3 5h18v4H3zM5 9v10h14V9M10 13h4'
+  };
+  function iconBtn(cls, d, label, on) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'ci-act ' + cls + (on ? ' on' : '');
+    b.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="' + d + '"/></svg>';
+    b.setAttribute('aria-label', label); b.title = label;
+    return b;
+  }
+  function inProject(c) { return S.settings.showAllProjects || c.cwd === S.settings.currentProject || isApiChat(c.agent); }
+  function visibleChats() {
+    const q = S.search.trim().toLowerCase();
+    if (q) {
+      const score = (c) => (searchHits && searchHits.get(c.id) ? searchHits.get(c.id).hits : 0) + ((c.title || '').toLowerCase().includes(q) ? 100 : 0);
+      return S.chats.filter((c) => ((c.title || '') + ' ' + (c.snippet || '')).toLowerCase().includes(q) || (searchHits && searchHits.has(c.id)))
+        .sort((a, b) => score(b) - score(a) || b.updated - a.updated);
+    }
+    // Pinned chats lead the list; inside each part the newest comes first.
+    return S.chats.filter((c) => inProject(c) && !!c.archived === showArchive).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updated - a.updated);
+  }
+  function renderListBar() {
+    const bar = $('listBar');
+    bar.textContent = '';
+    const q = S.search.trim();
+    const sel = document.createElement('button');
+    sel.type = 'button'; sel.className = 'list-btn' + (selecting ? ' on' : ''); sel.textContent = L('list.select');
+    sel.addEventListener('click', () => { selecting = !selecting; selected.clear(); renderChatList(); });
+    bar.append(sel);
+    const archived = S.chats.filter((c) => inProject(c) && c.archived).length;
+    if (!q && (archived || showArchive)) {
+      const ar = document.createElement('button');
+      ar.type = 'button'; ar.className = 'list-btn' + (showArchive ? ' on' : '');
+      ar.textContent = showArchive ? L('list.backToChats') : L('list.archive', { n: archived });
+      ar.addEventListener('click', () => { showArchive = !showArchive; selected.clear(); renderChatList(); });
+      bar.append(ar);
+    }
+  }
+  function renderSelectBar(items) {
+    const bar = $('selectBar');
+    bar.hidden = !selecting;
+    bar.textContent = '';
+    if (!selecting) return;
+    for (const id of [...selected]) if (!S.chats.some((c) => c.id === id)) selected.delete(id);
+    const n = document.createElement('span'); n.className = 'sel-count'; n.textContent = L('select.count', { n: selected.size }); bar.append(n);
+    const mk = (label, cls, fn, disabled) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'mini-btn' + (cls ? ' ' + cls : ''); b.textContent = label; b.disabled = !!disabled; b.addEventListener('click', fn); bar.append(b); };
+    const all = items.length && items.every((c) => selected.has(c.id));
+    mk(all ? L('select.none') : L('select.all'), '', () => { if (all) selected.clear(); else items.forEach((c) => selected.add(c.id)); renderChatList(); });
+    const ids = () => [...selected];
+    const anyArchived = ids().some((id) => (S.chats.find((c) => c.id === id) || {}).archived);
+    mk(anyArchived ? L('select.unarchive') : L('select.archive'), '', async () => { S.chats = await api.markChats(ids(), { archived: !anyArchived }); selected.clear(); renderChatList(); }, !selected.size);
+    mk(L('common.delete'), 'danger', async () => {
+      const list = ids();
+      const running = list.filter((id) => S.states[id] && !['idle', 'error'].includes(S.states[id])).length;
+      const ok = await confirmDialog({ title: L('select.deleteTitle', { n: list.length }), text: L('select.deleteText'), warning: running ? L('select.deleteRunning', { n: running }) : '', ok: L('common.delete') });
+      if (!ok) return;
+      S.chats = await api.deleteChats(list);
+      if (S.chat && list.includes(S.chat.id)) openDraft();
+      selected.clear(); renderChatList();
+    }, !selected.size);
+    mk(L('select.done'), '', () => { selecting = false; selected.clear(); renderChatList(); });
+  }
   function renderChatList() {
     const list = $('chatList');
     list.textContent = '';
-    const q = S.search.trim().toLowerCase();
-    const items = S.chats
-      .filter((c) => S.settings.showAllProjects || q || c.cwd === S.settings.currentProject || isApiChat(c.agent))
-      .filter((c) => !q || (c.title + ' ' + (c.snippet || '')).toLowerCase().includes(q))
-      .sort((a, b) => b.updated - a.updated);
+    renderListBar();
+    const q = S.search.trim();
+    const items = visibleChats();
+    renderSelectBar(items);
     if (!items.length) {
       const d = document.createElement('div');
       d.className = 'empty-list';
-      d.textContent = q ? L('common.nothingFound') : L('side.emptyChats');
+      d.textContent = q ? (searchHits || q.length < 2 ? L('common.nothingFound') : L('common.loading')) : showArchive ? L('list.archiveEmpty') : L('side.emptyChats');
       list.append(d);
       return;
     }
     let lastGroup = '';
     for (const c of items) {
-      const g = groupOf(c.updated);
+      const g = q ? L('group.found', { n: items.length }) : showArchive ? L('group.archive') : c.pinned ? L('group.pinned') : groupOf(c.updated);
       if (g !== lastGroup) {
         const gl = document.createElement('div'); gl.className = 'group-label'; gl.textContent = g; list.append(gl); lastGroup = g;
       }
-      const row = document.createElement('div');
-      row.className = 'chat-item' + (S.chat && S.chat.id === c.id ? ' on' : '');
-      row.setAttribute('role', 'button');
-      row.tabIndex = 0;
-      const st = S.states[c.id];
-      const running = st && st !== 'idle' && st !== 'error';
-      row.innerHTML = '<span class="dot' + (running ? ' running' : '') + '"></span><span class="ci-text"><span class="ci-title"></span><span class="ci-sub"></span></span><button type="button" class="ci-del">×</button>';
-      row.querySelector('.ci-del').setAttribute('aria-label', L('chat.delete'));
-      row.querySelector('.dot').style.background = st === 'waiting' ? 'var(--warn)' : AGENTS[c.agent].color;
-      row.querySelector('.ci-title').textContent = c.title;
-      row.querySelector('.ci-sub').textContent = AGENTS[c.agent].label + ' · ' + hhmm(c.updated) + (S.settings.showAllProjects && !isApiChat(c.agent) ? ' · ' + base(c.cwd) : '');
-      row.addEventListener('click', (e) => { if (!e.target.closest('.ci-del')) openChat(c.id); });
-      row.addEventListener('keydown', (e) => { if (e.key === 'Enter') openChat(c.id); });
-      const del = row.querySelector('.ci-del');
-      del.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!del.classList.contains('confirm')) {
-          del.classList.add('confirm'); del.textContent = L('chat.deleteConfirm');
-          setTimeout(() => { del.classList.remove('confirm'); del.textContent = '×'; }, 3000);
-          return;
-        }
-        S.chats = await api.deleteChat(c.id);
-        if (S.chat && S.chat.id === c.id) openDraft();
-        renderChatList();
-      });
-      list.append(row);
+      list.append(chatRow(c, q));
     }
   }
-  $('search').addEventListener('input', (e) => { S.search = e.target.value; renderChatList(); });
+  function chatRow(c, q) {
+    const row = document.createElement('div');
+    row.className = 'chat-item' + (S.chat && S.chat.id === c.id ? ' on' : '') + (selecting && selected.has(c.id) ? ' picked' : '');
+    row.setAttribute('role', 'button');
+    row.tabIndex = 0;
+    const st = S.states[c.id];
+    const running = st && st !== 'idle' && st !== 'error';
+    const agent = AGENTS[c.agent] || AGENTS.claude;
+    row.innerHTML = '<span class="dot' + (running ? ' running' : '') + '"></span><span class="ci-text"><span class="ci-title"></span><span class="ci-sub"></span></span><span class="ci-acts"></span>';
+    if (selecting) {
+      const box = document.createElement('input'); box.type = 'checkbox'; box.className = 'ci-check'; box.checked = selected.has(c.id); box.tabIndex = -1;
+      box.setAttribute('aria-label', c.title);
+      row.querySelector('.dot').replaceWith(box);
+    } else row.querySelector('.dot').style.background = st === 'waiting' ? 'var(--warn)' : agent.color;
+    row.querySelector('.ci-title').textContent = c.title;
+    const hit = q && searchHits && searchHits.get(c.id);
+    const when = (q || showArchive ? new Date(c.updated).toLocaleDateString(I18N.locale) + ' ' : '') + hhmm(c.updated);
+    row.querySelector('.ci-sub').textContent = hit && hit.snippet ? hit.snippet
+      : agent.label + ' · ' + when + (c.archived && q ? ' · ' + L('group.archive').toLowerCase() : '') + ((S.settings.showAllProjects || q) && !isApiChat(c.agent) ? ' · ' + base(c.cwd) : '');
+    const toggle = () => { if (selected.has(c.id)) selected.delete(c.id); else selected.add(c.id); renderChatList(); };
+    row.addEventListener('click', (e) => { if (e.target.closest('.ci-acts')) return; if (selecting) toggle(); else openChat(c.id); });
+    row.addEventListener('keydown', (e) => { if (e.target !== row) return; if (e.key === 'Enter' || (selecting && e.key === ' ')) { e.preventDefault(); if (selecting) toggle(); else openChat(c.id); } });
+    if (selecting) return row;
+    const acts = row.querySelector('.ci-acts');
+    if (!c.archived) {
+      const pin = iconBtn('ci-pin', ICON.pin, c.pinned ? L('chat.unpin') : L('chat.pin'), c.pinned);
+      pin.addEventListener('click', async () => { S.chats = await api.markChats([c.id], { pinned: !c.pinned }); renderChatList(); });
+      acts.append(pin);
+    }
+    const arch = iconBtn('ci-arch', ICON.archive, c.archived ? L('chat.unarchive') : L('chat.archive'), false);
+    arch.addEventListener('click', async () => { S.chats = await api.markChats([c.id], { archived: !c.archived }); toast(c.archived ? L('chat.unarchived') : L('chat.archived')); renderChatList(); });
+    acts.append(arch);
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'ci-del'; del.textContent = '×'; del.setAttribute('aria-label', L('chat.delete'));
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!del.classList.contains('confirm')) {
+        del.classList.add('confirm'); del.textContent = L('chat.deleteConfirm');
+        setTimeout(() => { del.classList.remove('confirm'); del.textContent = '×'; }, 3000);
+        return;
+      }
+      S.chats = await api.deleteChat(c.id);
+      if (S.chat && S.chat.id === c.id) openDraft();
+      renderChatList();
+    });
+    acts.append(del);
+    return row;
+  }
+  $('search').addEventListener('input', (e) => { S.search = e.target.value; runSearch(); });
 
   /* ---------- открытие чатов ---------- */
   const viewListeners = [];
   function viewChanged() { $('bridge').hidden = true; viewListeners.forEach((f) => f()); }
-  function hideViews() { $('hero').hidden = true; $('chatView').hidden = true; $('composer').hidden = true; $('studio').hidden = true; $('gptImages').hidden = true; }
+  function hideViews() { S.home = false; $('app').classList.remove('on-home'); if (window.StellaHome) window.StellaHome.close(); $('home').hidden = true; $('hero').hidden = true; $('chatView').hidden = true; $('composer').hidden = true; $('studio').hidden = true; $('gptImages').hidden = true; }
+  // Leaving the home screen must happen before the agent theme is applied, or the view keeps the home look.
+  function leaveHome() {
+    if (!S.home) return;
+    S.home = false;
+    $('app').classList.remove('on-home');
+    $('home').hidden = true;
+    if (window.StellaHome) window.StellaHome.close();
+  }
   function showHero(on) {
     viewChanged();
+    leaveHome();
     $('gptImages').hidden = true;
     $('studio').hidden = true;
     $('composer').hidden = false;
@@ -498,8 +674,31 @@
   function clearInputForms() {
     $('messages').querySelectorAll('[data-input-req]').forEach((form) => form.reset());
   }
+  // Home: every agent's limits and a suggestion where to start. Shown at launch and from the logo.
+  function openHome() {
+    ++chatNavigation;
+    clearInputForms();
+    viewChanged();
+    hideViews();
+    $('messages').textContent = '';
+    S.chat = null; S.studio = false; S.gptImages = false;
+    S.attachments = []; renderAttachments();
+    S.home = true;
+    $('app').classList.add('on-home');
+    $('home').hidden = false;
+    applyTheme();
+    renderChatList(); renderFiles(); updateOrbs();
+    if (window.StellaHome) window.StellaHome.open();
+  }
+  function chooseAgent(agent) {
+    S.agent = agent;
+    saveSettings({ agent });
+    openDraft();
+  }
+  $('homeBtn').addEventListener('click', openHome);
   function openDraft() {
     ++chatNavigation;
+    leaveHome();
     clearInputForms();
     $('messages').textContent = '';
     S.studio = false;
@@ -519,6 +718,7 @@
     const navigation = ++chatNavigation;
     const c = await api.getChat(id);
     if (!c || navigation !== chatNavigation) return;
+    leaveHome();
     clearInputForms();
     S.studio = false;
     S.gptImages = false;
@@ -677,7 +877,12 @@
     if (m.status === 'stopped') html += '<div class="stopped-note">' + L('msg.stopped') + '</div>';
     if (m.status !== 'running') {
       const u = m.usage;
+      const isLast = S.chat && S.chat.messages[S.chat.messages.length - 1] === m;
+      // Out of limits: offer to hand the work to another agent right in the reply.
+      if (m.limitHit && isLast) html += '<div class="handoff-card"><span>' + esc(L('handoff.limitHint')) + '</span><button type="button" class="btn accent" data-handoff="1">' + esc(L('handoff.button')) + '</button></div>';
       html += '<div class="ai-foot"><button type="button" class="mini-btn" data-copy="1">' + L('common.copy') + '</button>' +
+        (isLast ? '<button type="button" class="mini-btn" data-retry="1">' + esc(L('msg.retry')) + '</button>' : '') +
+        (isLast && m.status === 'error' && !m.limitHit ? '<button type="button" class="mini-btn" data-handoff="1">' + esc(L('handoff.button')) + '</button>' : '') +
         (u ? '<span class="meta">' + L('msg.usage', { input: fmtNum(u.input), output: fmtNum(u.output) }) + (u.cost ? ' · $' + u.cost.toFixed(3) : '') + '</span>' : '') + '</div>';
     }
     const forms = [...el.querySelectorAll('[data-input-req]')];
@@ -795,6 +1000,9 @@
       else openHtmlPreview(code);
       return;
     }
+    if (e.target.closest('[data-retry]')) return retryLast();
+    const ho = e.target.closest('[data-handoff]');
+    if (ho) return openHandoffMenu(ho);
     const cp = e.target.closest('[data-copy]');
     if (cp) {
       const id = cp.closest('.msg').dataset.id;
@@ -803,6 +1011,73 @@
       await navigator.clipboard.writeText(text);
       cp.textContent = L('common.copied'); setTimeout(() => (cp.textContent = L('common.copy')), 1500);
     }
+  });
+
+  const isBusy = (id) => !!(S.states[id] && !['idle', 'error'].includes(S.states[id]));
+  // «Повторить»: the last request goes out again (same text and files); the earlier answer stays above.
+  async function retryLast() {
+    const chat = S.chat;
+    if (!chat || isBusy(chat.id)) return;
+    const msgs = chat.messages;
+    let i = msgs.length - 1;
+    while (i >= 0 && msgs[i].role !== 'user') i--;
+    if (i < 0) return;
+    const u = msgs[i];
+    S.states[chat.id] = 'thinking'; updateOrbs();
+    await api.send(chat.id, { text: u.text || '', attachments: (u.attachments || []).map((a) => ({ name: a.name, path: a.path, mime: a.mime })), mode: modeFor(chat.agent) });
+  }
+
+  /* ---------- передать другому агенту ---------- */
+  const HANDOFF_AGENTS = ['claude', 'codex', 'chatgpt', 'deepseek', 'gemini', 'openrouter'];
+  function closeHandoffMenu() { const m = $('handoffMenu'); if (m) m.remove(); document.removeEventListener('click', onHandoffOutside, true); }
+  function onHandoffOutside(e) { if (!e.target.closest('#handoffMenu') && !e.target.closest('[data-handoff], #handoffBtn')) closeHandoffMenu(); }
+  function openHandoffMenu(anchor) {
+    if ($('handoffMenu')) { closeHandoffMenu(); return; }
+    const chat = S.chat;
+    if (!chat) return;
+    if (!chat.messages.length) { toast(L('chat.nothingToTransfer')); return; }
+    const menu = document.createElement('div');
+    menu.id = 'handoffMenu'; menu.className = 'menu handoff-menu'; menu.setAttribute('role', 'menu');
+    const head = document.createElement('div'); head.className = 'handoff-head'; head.textContent = L('handoff.title'); menu.append(head);
+    for (const a of HANDOFF_AGENTS.filter((x) => x !== chat.agent)) {
+      const ready = agentReady(a);
+      const b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('role', 'menuitem');
+      b.innerHTML = '<span class="ho-name"><i></i><span></span></span><small></small>';
+      b.querySelector('i').style.background = AGENTS[a].color;
+      b.querySelector('.ho-name span').textContent = AGENTS[a].label;
+      b.querySelector('small').textContent = !ready ? L('handoff.notReady') : isApiChat(a) ? L('handoff.chatOnly') : L('handoff.withFiles');
+      if (!ready) b.classList.add('off');
+      b.addEventListener('click', async () => {
+        closeHandoffMenu();
+        if (!ready) { if (KEY_AGENTS.includes(a) || a === 'chatgpt') openSettings(); else runAction(a === 'claude' ? 'install-claude' : 'install-codex'); return; }
+        if (isBusy(chat.id)) { toast(L('chat.waitOrStop')); return; }
+        try {
+          const c = await api.handoffChat(chat.id, a);
+          if (!c) { toast(L('chat.nothingToTransfer')); return; }
+          await openChat(c.id);
+          toast(L('handoff.done', { agent: AGENTS[a].label }));
+        } catch (err) { toast(String(err && err.message || err)); }
+      });
+      menu.append(b);
+    }
+    const r = anchor.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.left = Math.max(8, Math.min(window.innerWidth - 300, r.right - 290)) + 'px';
+    menu.style.right = 'auto';
+    if (r.bottom + 280 > window.innerHeight) { menu.style.top = 'auto'; menu.style.bottom = (window.innerHeight - r.top + 6) + 'px'; }
+    else menu.style.top = (r.bottom + 6) + 'px';
+    document.body.append(menu);
+    setTimeout(() => document.addEventListener('click', onHandoffOutside, true), 0);
+    const first = menu.querySelector('button:not(.off)') || menu.querySelector('button');
+    if (first) first.focus();
+  }
+  $('handoffBtn').addEventListener('click', (e) => openHandoffMenu(e.currentTarget));
+  $('exportBtn').addEventListener('click', async () => {
+    if (!S.chat) return;
+    const r = await api.exportChat(S.chat.id);
+    if (r && r.ok) toast(L('export.saved', { path: r.path }), 5000);
+    else if (r && r.error) toast(L('export.failed', { message: r.error }), 6000);
   });
 
   /* ---------- действия из ошибок и панели ---------- */
@@ -860,7 +1135,7 @@
     } else showHero(false);
     $('input').value = ''; autosize();
     S.attachments = []; renderAttachments();
-    const mode = S.chat.agent === 'claude' ? S.settings.claude.permissionMode : usesCodex(S.chat.agent) ? (S.settings[S.chat.agent].sandbox || 'workspace-write') : undefined;
+    const mode = modeFor(S.chat.agent);
     S.states[S.chat.id] = 'thinking';
     updateOrbs();
     await api.send(S.chat.id, { text, attachments: atts.map((a) => ({ name: a.name, path: a.path, data: a.data, mime: a.mime })), mode });
@@ -953,6 +1228,7 @@
   $('hudToggle').addEventListener('click', async () => { await saveSettings({ hudOpen: S.settings.hudOpen === false }); applyHud(); });
 
   function renderSys() {
+    if (S.home && window.StellaHome) window.StellaHome.refresh();
     const box = $('sysList');
     let account = $('codexAccountStatus');
     if (!account) { account = document.createElement('div'); account.id = 'codexAccountStatus'; account.className = 'muted-note codex-account'; box.after(account); }
@@ -967,6 +1243,7 @@
       { key: 'claude', ok: !!(S.env.claudeExe && S.env.claudeSdk), status: !S.env.claudeExe ? L('sys.notFound') : !S.env.claudeSdk ? L('sys.sdkNeeded') : L('sys.installed'), actions: !S.env.claudeExe ? [['install-claude', L('sys.install')]] : !S.env.claudeSdk ? [['install-sdk', L('sys.installSdk')], ['login-claude', L('sys.signIn')]] : [['login-claude', L('sys.switchAccount')]] },
       { key: 'codex', ok: !!S.env.codexJs, status: S.env.codexJs ? L('sys.installed') : L('sys.notFound'), actions: S.env.codexJs ? [['login-codex', L('sys.switchAccount')]] : [['install-codex', L('sys.install')]] },
       { key: 'chatgpt', ok: S.settings.chatgpt.backend === 'api' ? S.settings.hasApiKey : !!S.env.codexJs, status: S.settings.chatgpt.backend === 'api' ? (S.settings.hasApiKey ? L('sys.apiKey') : L('sys.noKey')) : L('sys.chatgptAccount'), actions: [['settings', L('sys.configure')]] },
+      ...KEY_AGENTS.map((k) => ({ key: k, ok: agentReady(k), status: agentReady(k) ? L('sys.apiKey') : L('sys.noKey'), actions: [['settings', L('sys.configure')]] })),
       { key: 'images', ok: cfReady(), status: cfReady() ? 'CLOUDFLARE' : L('sys.notConfigured'), actions: [['studio', cfReady() ? L('common.open') : L('sys.configure')]] }
     ];
     for (const r of rows) {
@@ -1085,7 +1362,8 @@
     const box = $('weekUsage');
     box.textContent = '';
     const w = S.usage.week || {};
-    for (const k of ['claude', 'codex', 'chatgpt']) {
+    // DeepSeek and Gemini appear once they have been used this week, so the grid stays compact.
+    for (const k of ['claude', 'codex', 'chatgpt', ...KEY_AGENTS.filter((a) => w[a])]) {
       const u = w[k] || { input: 0, output: 0, runs: 0, cost: 0 };
       const d = document.createElement('div');
       d.className = 'u-cell';
@@ -1226,7 +1504,7 @@
     const pane = document.createElement('div');
     pane.className = 'term-pane';
     $('termHost').append(pane);
-    const xterm = new Terminal({ fontFamily: "'Cascadia Mono', Consolas, monospace", fontSize: 13, cursorBlink: true, theme: { background: '#0A0A0F', foreground: '#ECEAE4', cursor: AGENTS[viewAgent()].color, selectionBackground: '#33334A' } });
+    const xterm = new Terminal({ fontFamily: "'Cascadia Mono', Consolas, monospace", fontSize: 13, cursorBlink: true, theme: { background: '#070A1E', foreground: '#E9E7F5', cursor: AGENTS[viewAgent()].color, selectionBackground: '#2B3566' } });
     const fit = new FitAddon.FitAddon();
     xterm.loadAddon(fit);
     xterm.open(pane);
@@ -1592,6 +1870,35 @@
       } catch (e) { toast(L('settings.gpt.modelsFailed')); }
     });
 
+    // DeepSeek and Gemini: chat over their API with the user's own key.
+    const KEY_LINKS = { deepseek: 'https://platform.deepseek.com/api_keys', gemini: 'https://aistudio.google.com/apikey', openrouter: 'https://openrouter.ai/settings/keys' };
+    for (const p of KEY_AGENTS) {
+      const sect = el('<div class="sect"><h3></h3><div class="hint"></div><div class="field"><label></label><div class="row"><input class="input" type="password" autocomplete="off"><button type="button" class="btn" data-k="save" data-i18n="common.save"></button><button type="button" class="btn danger" data-k="del" data-i18n="common.delete"></button><button type="button" class="btn" data-k="get"></button></div><div class="hint" data-k="state"></div></div></div>');
+      const name = AGENTS[p].label;
+      sect.querySelector('h3').textContent = name.toUpperCase();
+      sect.querySelector('.hint').textContent = L('settings.apiKey.hint.' + p);
+      const input = sect.querySelector('input');
+      input.id = 'key-' + p; input.placeholder = L('settings.apiKey.placeholder');
+      sect.querySelector('label').setAttribute('for', input.id); sect.querySelector('label').textContent = L('settings.apiKey.label', { name });
+      sect.querySelector('[data-k=get]').textContent = L('settings.apiKey.get');
+      const state = () => { sect.querySelector('[data-k=state]').textContent = S.settings.hasKeys && S.settings.hasKeys[p] ? L('settings.apiKey.stored') : L('settings.apiKey.none'); };
+      state();
+      const after = () => { input.value = ''; state(); renderSys(); delete apiCatalog[p]; renderModelSelects(); };
+      sect.querySelector('[data-k=save]').addEventListener('click', async () => {
+        const v = input.value.trim();
+        if (!v) return;
+        try {
+          S.settings = await api.setApiKey(v, p); after();
+          // Check the key at once: the model list needs a valid one.
+          try { const list = await api.apiModels(p); apiCatalog[p] = list; renderModelSelects(); toast(L('settings.apiKey.checked', { name, n: list.length })); }
+          catch (err) { toast(L('settings.apiKey.checkFailed', { name, message: String(err && err.message || err) }), 7000); }
+        } catch (err) { toast(L('settings.gpt.keySaveFailed', { message: err.message })); }
+      });
+      sect.querySelector('[data-k=del]').addEventListener('click', async () => { S.settings = await api.setApiKey('', p); after(); });
+      sect.querySelector('[data-k=get]').addEventListener('click', () => api.openUrl(KEY_LINKS[p]));
+      body.append(sect);
+    }
+
     // аккаунты
     const accS = el('<div class="sect"><h3 data-i18n="accounts.title"></h3><div class="hint" data-i18n="accounts.hint"></div><div class="acc-list"></div></div>');
     body.append(accS);
@@ -1776,7 +2083,7 @@
     const t = editing ? Object.assign({}, editing) : { id: 't' + Date.now(), name: '', agent: S.agent, cwd: S.settings.currentProject, time: '09:00', days: [1, 2, 3, 4, 5], prompt: '', enabled: true };
     const form = el('<form class="sect"><h3 data-i18n="' + (editing ? 'tasks.editTitle' : 'tasks.newTitle') + '"></h3>' +
       '<div class="grid2"><div class="field"><label for="tkName" data-i18n="tasks.name"></label><input id="tkName" class="input" required></div>' +
-      '<div class="field"><label for="tkAgent" data-i18n="composer.agent"></label><select id="tkAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="chatgpt">ChatGPT</option></select></div></div>' +
+      '<div class="field"><label for="tkAgent" data-i18n="composer.agent"></label><select id="tkAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="chatgpt">ChatGPT</option><option value="deepseek">DeepSeek</option><option value="gemini">Gemini</option><option value="openrouter">OpenRouter</option></select></div></div>' +
       '<div class="grid2"><div class="field"><label for="tkTime" data-i18n="tasks.time"></label><input id="tkTime" class="input" type="time" required></div>' +
       '<div class="field"><label for="tkCwd" data-i18n="dialog.projectFolder"></label><select id="tkCwd"></select></div></div>' +
       '<div class="field"><span class="lbl" data-i18n="tasks.days"></span><div class="days" id="tkDays"></div></div>' +
@@ -1824,7 +2131,10 @@
   api.onChatMessage(({ chatId, message }) => {
     if (!S.chat || S.chat.id !== chatId) return;
     if (S.chat.messages.some((m) => m.id === message.id)) return;
+    // The previous reply is no longer the last one: its retry and handoff buttons go away.
+    const prev = S.chat.messages[S.chat.messages.length - 1];
     S.chat.messages.push(message);
+    if (prev && prev.role !== 'user') scheduleUpdate(prev.id);
     const box = $('messages');
     box.append(message.role === 'user' ? renderUser(message) : renderAi(message));
     showHero(false);
@@ -1895,9 +2205,11 @@
   /* ---------- клавиатура ---------- */
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyN') { e.preventDefault(); openDraft(); }
+    if (e.ctrlKey && !e.shiftKey && e.code === 'KeyH') { e.preventDefault(); openHome(); }
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyK') { e.preventDefault(); $('search').focus(); }
     if (e.key === 'Escape') {
-      if (!$('settingsModal').hidden) closeModal('settingsModal');
+      if ($('handoffMenu')) closeHandoffMenu();
+      else if (!$('settingsModal').hidden) closeModal('settingsModal');
       else if (!$('tasksModal').hidden) closeModal('tasksModal');
       else if (!$('drawer').hidden) closeDrawer();
       else if (!$('projMenu').hidden) closeProjMenu();
@@ -1914,7 +2226,7 @@
   }
 
   /* ---------- доступ для «Мостика» ---------- */
-  window.StellaApp = { api, S, AGENTS, esc, toast, fileUrl, base, openChat, openDraft, openStudio, cfReady, hideViews, openGptImages, runAction, onViewChange: (f) => viewListeners.push(f) };
+  window.StellaApp = { api, S, AGENTS, esc, toast, fileUrl, base, openChat, openDraft, openStudio, cfReady, hideViews, openGptImages, runAction, openHome, chooseAgent, limitsFor, onViewChange: (f) => viewListeners.push(f) };
 
   /* ---------- старт ---------- */
   applyHud();
@@ -1923,7 +2235,11 @@
   renderLimits();
   renderUsage();
   renderDirectives();
-  openDraft();
+  openHome();
   refreshCodex();
-  setInterval(refreshCodex, 120000);
+  // Each refresh starts Codex processes: skip it while the window is hidden and catch up when it is shown.
+  let catalogAt = Date.now();
+  const refreshIfDue = () => { if (!document.hidden && Date.now() - catalogAt >= 120000) { catalogAt = Date.now(); refreshCodex(); } };
+  setInterval(refreshIfDue, 30000);
+  document.addEventListener('visibilitychange', refreshIfDue);
 })();
