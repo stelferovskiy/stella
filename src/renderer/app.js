@@ -190,6 +190,12 @@
     if (agent === 'chatgpt') return S.settings.chatgpt.backend === 'api' ? !!S.settings.hasApiKey : !!S.env.codexJs;
     return !!(S.settings.hasKeys && S.settings.hasKeys[agent]);
   }
+  // Claude events may carry the percentage only inside unifiedWindows (newer CLI).
+  function claudeUtil(info, k) {
+    if (info.utilization != null) return info.utilization;
+    const w = info.unifiedWindows && info.unifiedWindows[k];
+    return w && w.utilization != null ? w.utilization : null;
+  }
   // Limits of one agent for the home screen: windows with the share still left (0..100).
   // kind: quota (known limits) | pending (known after a reply) | key (API key) | nokey | missing.
   function limitsFor(agent) {
@@ -205,7 +211,7 @@
       for (const [k, label] of [['five_hour', L('limits.fiveHours')], ['seven_day', L('limits.sevenDays')]]) {
         const info = CL[k];
         if (!info) continue;
-        let pct = info.utilization;
+        let pct = claudeUtil(info, k);
         if (pct == null) pct = info.status === 'rejected' ? 100 : null;
         else if (pct <= 1) pct *= 100;
         if (pct != null) windows.push({ label, remaining: clamp(100 - pct), resetsAt: toMs(info.resetsAt) });
@@ -1393,7 +1399,7 @@
     box.textContent = '';
     for (const [k, label] of show) {
       const info = CL[k];
-      let pct = info.utilization;
+      let pct = claudeUtil(info, k);
       if (pct == null) pct = info.status === 'rejected' ? 100 : null;
       else if (pct <= 1) pct = pct * 100;
       const d = document.createElement('div');

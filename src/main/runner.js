@@ -177,7 +177,9 @@ function createRunner({ store, broadcast, notify, getApiKey, memory, onAccountLi
           onLimit: (info) => {
             // A run that started under the other account must not overwrite the active account's limits.
             if (account.slot && accounts.activeSlot(store.getSettings(), 'claude') !== account.slot) return;
-            store.setLimit('claude', info.rateLimitType || 'unknown', info);
+            // Newer CLI events keep the percentage only inside unifiedWindows, not at the top level.
+            const own = info.unifiedWindows && info.unifiedWindows[info.rateLimitType];
+            store.setLimit('claude', info.rateLimitType || 'unknown', info.utilization == null && own && own.utilization != null ? { ...info, utilization: own.utilization } : info);
             // The event carries every window; keep the other bars fresh too, not only the one that triggered it.
             for (const [k, w] of Object.entries(info.unifiedWindows || {})) {
               if (k !== info.rateLimitType && w && w.utilization != null) store.setLimit('claude', k, { utilization: w.utilization, resetsAt: w.resetsAt, status: w.status });
