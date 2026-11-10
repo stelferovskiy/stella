@@ -1,309 +1,59 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stella — command center for Claude, Codex and ChatGPT</title>
-<meta name="description" content="Stella is a free, open-source Windows desktop app that brings Claude, Codex and ChatGPT into one futuristic command center — with a live view of agents writing code.">
-<meta property="og:title" content="Stella — command center for AI agents">
-<meta property="og:description" content="Free, open-source Windows app for Claude, Codex and ChatGPT. Watch agents write code live.">
-<meta property="og:image" content="https://stelferovskiy.github.io/stella/img/og.jpg">
-<link rel="icon" href="img/icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-:root {
-  --bg: #07070C; --panel: #0F0F16; --line: #24242F; --text: #ECEAE4; --muted: #A3A1AF; --dim: #8E8C9E;
-  --claude: #E0875F; --codex: #5FB8C9; --gpt: #6FD3A0; --studio: #A98BFF;
-  --accent: #E0875F; --accent-rgb: 224,135,95;
-  --display: 'Space Grotesk', 'Segoe UI', sans-serif; --mono: 'JetBrains Mono', Consolas, monospace; --ui: 'Inter', 'Segoe UI', system-ui, sans-serif;
-}
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--ui); font-size: 16px; line-height: 1.6; overflow-x: hidden; }
-a { color: var(--accent); }
-a:hover { color: #F2A27E; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.wrap { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
-.mono { font-family: var(--mono); }
-
-/* nav */
-nav.top { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: rgba(7,7,12,.72); border-bottom: 1px solid rgba(255,255,255,.05); }
-nav.top .wrap { display: flex; align-items: center; gap: 24px; min-height: 64px; }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-family: var(--display); font-weight: 600; letter-spacing: 6px; font-size: 18px; }
-.brand img { width: 30px; height: 30px; border-radius: 8px; }
-nav.top ul { list-style: none; display: flex; gap: 22px; margin: 0 0 0 auto; padding: 0; }
-nav.top ul a { color: var(--muted); text-decoration: none; font-size: 14px; }
-nav.top ul a:hover { color: var(--text); }
-.btn { display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 22px; border-radius: 12px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--text); background: var(--panel); transition: transform .15s, box-shadow .2s, border-color .2s; }
-.btn:hover { transform: translateY(-1px); border-color: var(--accent); color: var(--text); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #170D08; box-shadow: 0 0 34px rgba(var(--accent-rgb), .35); }
-.btn.primary:hover { color: #170D08; box-shadow: 0 0 48px rgba(var(--accent-rgb), .5); }
-.btn.small { min-height: 38px; padding: 0 16px; font-size: 14px; }
-
-/* hero */
-.hero { position: relative; padding: 70px 0 40px; text-align: center; overflow: hidden; }
-.hero::before { content: ''; position: absolute; inset: -20% -10% auto; height: 900px; background: radial-gradient(ellipse 50% 45% at 50% 38%, rgba(var(--accent-rgb), .16), transparent 70%); pointer-events: none; transition: background .8s; }
-.orb { width: min(440px, 80vw); aspect-ratio: 1 / 1; margin: 0 auto; position: relative; }
-.orb canvas { width: 100%; height: 100%; display: block; }
-.kicker { font-family: var(--mono); font-size: 12px; letter-spacing: 4px; color: var(--muted); text-transform: uppercase; }
-h1 { font-family: var(--display); font-weight: 300; font-size: clamp(48px, 9vw, 96px); letter-spacing: .32em; margin: 6px 0 4px; line-height: 1; padding-left: .32em; }
-.lead { font-size: clamp(18px, 2.3vw, 22px); color: #D5D3DC; max-width: 720px; margin: 14px auto 28px; }
-.agents { display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 30px; }
-.agent { font-family: var(--mono); font-size: 13px; padding: 7px 14px; border-radius: 20px; border: 1px solid var(--c); color: var(--text); background: color-mix(in srgb, var(--c) 10%, transparent); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
-.agent::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
-.agent[aria-pressed="false"] { background: transparent; border-color: var(--line); color: var(--muted); }
-.agent[aria-pressed="false"]::before { box-shadow: none; }
-.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-.meta-line { margin-top: 14px; font-size: 13px; color: var(--dim); font-family: var(--mono); }
-
-/* sections */
-section { padding: 80px 0; }
-.label { font-family: var(--mono); font-size: 12px; letter-spacing: 4px; color: var(--accent); text-transform: uppercase; margin-bottom: 10px; }
-h2 { font-family: var(--display); font-weight: 400; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.12; margin: 0 0 16px; letter-spacing: -.01em; }
-.sub { color: var(--muted); max-width: 680px; font-size: 18px; margin: 0; }
-
-.shot { margin: 36px 0 0; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03), 0 0 80px rgba(var(--accent-rgb), .08); background: #0B0B11; }
-.shot img { width: 100%; height: auto; display: block; }
-.shot a { display: block; cursor: zoom-in; }
-.shot figcaption { padding: 12px 18px; font-size: 14px; color: var(--muted); border-top: 1px solid var(--line); }
-
-.bridge-points { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 28px; }
-.bp { border: 1px solid var(--line); border-radius: 14px; padding: 18px; background: linear-gradient(180deg, rgba(var(--accent-rgb), .06), transparent 120px), var(--panel); }
-.bp b { display: block; font-family: var(--display); font-weight: 500; font-size: 18px; margin-bottom: 6px; }
-.bp p { margin: 0; color: var(--muted); font-size: 15px; }
-
-.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 36px; }
-.card { border: 1px solid var(--line); border-radius: 14px; padding: 22px; background: var(--panel); transition: border-color .2s, transform .2s; }
-.card:hover { border-color: rgba(var(--accent-rgb), .5); transform: translateY(-2px); }
-.card .ico { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: rgba(var(--accent-rgb), .12); color: var(--accent); margin-bottom: 14px; }
-.card h3 { font-family: var(--display); font-weight: 500; font-size: 19px; margin: 0 0 6px; }
-.card p { margin: 0; color: var(--muted); font-size: 15px; }
-
-.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: center; }
-
-.steps { counter-reset: s; list-style: none; padding: 0; margin: 30px 0 0; display: grid; gap: 12px; }
-.steps li { counter-increment: s; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; align-items: start; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--panel); }
-.steps li::before { content: counter(s); width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--accent); color: var(--accent); display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 20px; }
-.steps li > div > b { display: block; font-family: var(--display); font-weight: 500; font-size: 18px; }
-.steps p { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
-code { font-family: var(--mono); font-size: .88em; background: #16161F; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
-
-.trust { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
-.trust .card h3 { font-size: 18px; }
-.roles { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
-.roles td { padding: 6px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
-.roles td:first-child { color: var(--text); }
-
-.final { text-align: center; }
-.final .orb { width: 200px; margin-bottom: 10px; }
-
-footer { border-top: 1px solid var(--line); padding: 30px 0 40px; color: var(--dim); font-size: 14px; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; }
-footer a { color: var(--muted); }
-footer .sp { margin-left: auto; }
-
-@media (max-width: 900px) {
-  .grid, .trust { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .bridge-points { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .two { grid-template-columns: minmax(0, 1fr); }
-  nav.top ul { display: none; }
-  nav.top .btn { margin-left: auto; }
-}
-@media (max-width: 560px) {
-  .grid, .trust, .bridge-points { grid-template-columns: minmax(0, 1fr); }
-  section { padding: 56px 0; }
-  .wrap { width: calc(100% - 32px); }
-  footer .sp { margin-left: 0; }
-}
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .btn, .card { transition: none; } }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05071a">
+  <title>Stella — your AI workspace on Windows</title>
+  <meta name="description" content="Stella brings Claude, Codex, ChatGPT and more into one Windows workspace. See agents work in Bridge, create images, and keep your projects together.">
+  <meta property="og:title" content="Stella — your AI workspace on Windows">
+  <meta property="og:description" content="One place for your AI agents, projects, live work and images.">
+  <meta property="og:image" content="https://stelferovskiy.github.io/stella/img/og.jpg">
+  <link rel="icon" href="img/icon.png">
+  <link rel="stylesheet" href="site.css">
+  <script src="i18n.js" defer></script>
+  <script src="orb.js" defer></script>
+  <script src="site.js" defer></script>
 </head>
 <body>
-
-<nav class="top" aria-label="Main">
-  <div class="wrap">
-    <a class="brand" href="#top"><img src="img/icon.png" alt="">STELLA</a>
-    <ul>
-      <li><a href="#bridge">Bridge</a></li>
-      <li><a href="#features">Features</a></li>
-      <li><a href="#install">Install</a></li>
-      <li><a href="#signing">Code signing</a></li>
-      <li><a href="https://github.com/stelferovskiy/stella">GitHub</a></li>
-    </ul>
-    <a class="btn small primary" href="#install">Download</a>
-  </div>
-</nav>
-
-<header class="hero" id="top">
-  <div class="wrap">
-    <div class="orb"><canvas id="orb" aria-hidden="true"></canvas></div>
-    <div class="kicker">Open-source command center · Windows</div>
-    <h1>STELLA</h1>
-    <p class="lead">One futuristic desktop app for <b>Claude</b>, <b>Codex</b> and <b>ChatGPT</b> — where you can actually watch the agents work.</p>
-    <div class="agents" role="group" aria-label="Preview the core in each agent's color">
-      <button type="button" class="agent" style="--c:var(--claude)" data-c="#E0875F" aria-pressed="true">Claude</button>
-      <button type="button" class="agent" style="--c:var(--codex)" data-c="#5FB8C9" aria-pressed="false">Codex</button>
-      <button type="button" class="agent" style="--c:var(--gpt)" data-c="#6FD3A0" aria-pressed="false">ChatGPT</button>
-      <button type="button" class="agent" style="--c:var(--studio)" data-c="#A98BFF" aria-pressed="false">Studio</button>
-    </div>
-    <div class="cta">
-      <a class="btn primary dl-link" href="https://github.com/stelferovskiy/stella/releases/download/v1.7.8/Stella-Setup-1.7.8.exe">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
-        Download for Windows
-      </a>
-      <a class="btn" href="https://github.com/stelferovskiy/stella">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.29-1.69-1.29-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.58.23 2.75.11 3.04.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.39-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
-        Source on GitHub
-      </a>
-    </div>
-    <div class="meta-line"><span id="ver">Version 1.7.8 · 89 MB</span> · Windows 10/11 x64 · MIT license · free</div>
-  </div>
-</header>
-
-<section id="bridge">
-  <div class="wrap">
-    <div class="label">Bridge</div>
-    <h2>Watch your agents think, type and build.</h2>
-    <p class="sub">Give one task to several agents at once and see each of them work in its own lane, live.</p>
-    <figure class="shot">
-      <a href="img/bridge.webp" target="_blank" rel="noopener" aria-label="Open full-size screenshot"><img src="img/bridge.webp" srcset="img/bridge-1280.webp 1280w, img/bridge.webp 2560w" sizes="(max-width: 900px) 100vw, 1160px" alt="Stella Bridge: Claude typing an HTML file, Codex replaying a code fix, Studio generating an image" loading="lazy" width="2560" height="1391"></a>
-      <figcaption>Claude writes <code>index.html</code> character by character, Codex replays its fix to a failing test, Studio synthesizes an image.</figcaption>
-    </figure>
-    <div class="bridge-points">
-      <div class="bp"><b>Live code</b><p>Code appears as Claude generates it, with syntax highlighting and a blinking cursor.</p></div>
-      <div class="bp"><b>Replayed edits</b><p>Codex changes are played back with the changed lines highlighted.</p></div>
-      <div class="bp"><b>Live preview</b><p>HTML pages rebuild in a preview tab every time the agent saves.</p></div>
-      <div class="bp"><b>Constellation of steps</b><p>Each command and edit lights up as a star — click one to inspect it.</p></div>
-    </div>
-  </div>
-</section>
-
-<section id="features">
-  <div class="wrap">
-    <div class="label">Features</div>
-    <h2>Everything in one command center.</h2>
-    <div class="grid">
-      <div class="card"><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></div><h3>A real chat</h3><p>Markdown, tables, code with copy buttons, and expandable steps for every command, edit and search.</p></div>
-      <div class="card"><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg></div><h3>You stay in control</h3><p>Allow, always allow or deny each command and file edit. Pick a mode from "ask first" to "plan only".</p></div>
-      <div class="card"><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><h3>History and projects</h3><p>Every chat is saved, searchable and resumable. Agents work in the project folder you choose.</p></div>
-      <div class="card"><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg></div><h3>Studio</h3><p>Generate images with FLUX through Cloudflare Workers AI — free within its daily quota.</p></div>
-      <div class="card"><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19h16M7 16V9M12 16V5M17 16v-4"/></svg></div><h3>Real limits</h3><p>See your actual 5-hour and weekly Claude subscription usage, plus tokens per agent.</p></div>
-      <div class="card"><div class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3>Schedule, tray, hotkey</h3><p>Scheduled tasks, tray mode, a global hotkey (Ctrl+Shift+Space), notifications and attachments.</p></div>
-    </div>
-    <div class="two" style="margin-top:56px">
-      <figure class="shot" style="margin:0">
-        <a href="img/chat.webp" target="_blank" rel="noopener" aria-label="Open full-size screenshot"><img src="img/chat.webp" srcset="img/chat-1280.webp 1280w, img/chat.webp 2560w" sizes="(max-width: 900px) 100vw, 580px" alt="Stella chat with Claude: steps, an approval card and a formatted answer" loading="lazy" width="2560" height="1391"></a>
-        <figcaption>Chat with steps, an approval card and a formatted answer.</figcaption>
-      </figure>
-      <figure class="shot" style="margin:0">
-        <a href="img/home.webp" target="_blank" rel="noopener" aria-label="Open full-size screenshot"><img src="img/home.webp" srcset="img/home-1280.webp 1280w, img/home.webp 2560w" sizes="(max-width: 900px) 100vw, 580px" alt="Stella home screen with the star core, quick skills, Claude limits and token usage" loading="lazy" width="2560" height="1391"></a>
-        <figcaption>The star core reacts to what the agent is doing; limits and usage on the right.</figcaption>
-      </figure>
-    </div>
-  </div>
-</section>
-
-<section id="install">
-  <div class="wrap two">
-    <div>
-      <div class="label">Install</div>
-      <h2>Up and running in minutes.</h2>
-      <p class="sub">Stella connects to the AI tools you install and sign in to yourself. It does not bundle or resell them.</p>
-      <div class="cta" style="justify-content:flex-start;margin-top:26px">
-        <a class="btn primary dl-link" href="https://github.com/stelferovskiy/stella/releases/download/v1.7.8/Stella-Setup-1.7.8.exe">Download installer</a>
-        <a class="btn" href="https://github.com/stelferovskiy/stella#build-from-source">Build from source</a>
+  <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+  <nav class="top" aria-label="Main navigation" data-i18n-aria="navAria"><div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Stella, back to top" data-i18n-aria="brandAria"><img src="img/icon.png" alt="">STELLA<span class="brand-mark" data-i18n="brandMark">/ desktop</span></a>
+    <div class="nav-links"><a href="#workspace" data-i18n="navWorkspace">Workspace</a><a href="#bridge" data-i18n="navBridge">Bridge</a><a href="#images" data-i18n="navImages">Images</a><a href="#install" data-i18n="navInstall">Install</a></div>
+    <div class="nav-actions"><div class="language" role="group" aria-label="Language" data-i18n-aria="languageAria"><button type="button" data-lang="ru" lang="ru" aria-pressed="false">RU</button><button type="button" data-lang="en" lang="en" aria-pressed="true">EN</button></div><a class="nav-download" href="https://github.com/stelferovskiy/stella/releases/latest" data-i18n="download">Download</a></div>
+  </div></nav>
+  <main id="main">
+    <header class="hero" id="top"><div class="wrap hero-layout">
+      <div class="hero-copy"><p class="system-line"><span class="signal"></span><span data-i18n="heroSystem">Your AI workspace · Windows</span></p>
+        <h1 data-i18n="heroTitle">A place for every agent. A clear view of every step.</h1>
+        <p class="hero-lead" data-i18n="heroLead">Work with Claude, Codex, ChatGPT, DeepSeek, Gemini and OpenRouter in one desktop app. Keep the conversation, code and images close to your project.</p>
+        <div class="hero-actions"><a class="button primary" href="https://github.com/stelferovskiy/stella/releases/latest" data-i18n="downloadWindows">Download for Windows</a><a class="button secondary" href="#workspace" data-i18n="explore">Explore Stella</a></div>
+        <p class="hero-note" data-i18n="heroNote">Free and open source · Windows 10/11 x64 · MIT</p>
       </div>
-    </div>
-    <ol class="steps">
-      <li><div><b>Install Node.js</b><p>The LTS version from <a href="https://nodejs.org">nodejs.org</a>.</p></div></li>
-      <li><div><b>Run the installer</b><p>Choose the folder and whether to add desktop and Start menu shortcuts.</p></div></li>
-      <li><div><b>Connect your agents</b><p>In the <b>Systems</b> panel, one click installs and signs in to Claude Code, Codex, or sets up Studio.</p></div></li>
-      <li><div><b>Uninstall any time</b><p>Settings → Apps → Installed apps → Stella → Uninstall.</p></div></li>
-    </ol>
-  </div>
-</section>
-
-<section id="signing">
-  <div class="wrap">
-    <div class="label">Trust</div>
-    <h2>Open, local, transparent.</h2>
-    <div class="trust">
-      <div class="card">
-        <h3>Code signing policy</h3>
-        <p>Free code signing provided by <a href="https://signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a> — application in progress; current releases are unsigned. Only installers built by the public <a href="https://github.com/stelferovskiy/stella/blob/main/.github/workflows/build.yml">GitHub Actions workflow</a> are signed, each approved manually.</p>
-        <table class="roles">
-          <tr><td>Committers &amp; reviewers</td><td><a href="https://github.com/stelferovskiy">stelferovskiy</a></td></tr>
-          <tr><td>Approvers</td><td><a href="https://github.com/stelferovskiy">stelferovskiy</a></td></tr>
-        </table>
-        <p style="margin-top:10px"><a href="https://github.com/stelferovskiy/stella/blob/main/CODE_SIGNING_POLICY.md">Full code signing policy →</a></p>
-      </div>
-      <div class="card">
-        <h3>Privacy</h3>
-        <p>No telemetry, no analytics, no tracking. Chats and settings stay on your computer. Your content goes only to the AI service you pick — Anthropic, OpenAI or Cloudflare — and only when you send it.</p>
-        <p style="margin-top:10px"><a href="https://github.com/stelferovskiy/stella/blob/main/PRIVACY.md">Privacy statement →</a></p>
-      </div>
-      <div class="card">
-        <h3>Open source</h3>
-        <p>MIT licensed. Built only from open-source components (Electron, xterm.js, node-pty). Proprietary CLIs and SDKs are installed by you and never redistributed.</p>
-        <p style="margin-top:10px"><a href="https://github.com/stelferovskiy/stella/blob/main/LICENSE">License →</a> · <a href="https://github.com/stelferovskiy/stella/blob/main/CODE_OF_CONDUCT.md">Code of conduct →</a></p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="final">
-  <div class="wrap">
-    <div class="orb"><canvas id="orb2" aria-hidden="true"></canvas></div>
-    <h2>Your agents, under one star.</h2>
-    <div class="cta" style="margin-top:22px">
-      <a class="btn primary dl-link" href="https://github.com/stelferovskiy/stella/releases/download/v1.7.8/Stella-Setup-1.7.8.exe">Download Stella</a>
-      <a class="btn" href="https://github.com/stelferovskiy/stella/issues">Report an issue</a>
-    </div>
-  </div>
-</section>
-
-<footer>
-  <div class="wrap">
-    <span>© 2026 stelferovskiy · MIT</span>
-    <a href="https://github.com/stelferovskiy/stella">GitHub</a>
-    <a href="https://github.com/stelferovskiy/stella/releases">Releases</a>
-    <a href="https://github.com/stelferovskiy/stella/blob/main/CODE_SIGNING_POLICY.md">Code signing policy</a>
-    <a href="https://github.com/stelferovskiy/stella/blob/main/PRIVACY.md">Privacy</a>
-    <span class="sp">Claude, Codex and ChatGPT are trademarks of their respective owners. Stella is an independent project.</span>
-  </div>
-</footer>
-
-<script src="orb.js"></script>
-<script>
-(function () {
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const orb = new StellaOrb(document.getElementById('orb'), { count: reduce ? 120 : 240 });
-  const orb2 = new StellaOrb(document.getElementById('orb2'), { count: 90, ring: false });
-  const states = ['idle', 'thinking', 'streaming', 'tool'];
-  let i = 0;
-  if (!reduce) setInterval(() => { i = (i + 1) % states.length; orb.setState(states[i]); }, 3200);
-  const root = document.documentElement.style;
-  document.querySelectorAll('.agent').forEach((b) => b.addEventListener('click', () => {
-    document.querySelectorAll('.agent').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-    const c = b.dataset.c;
-    const n = parseInt(c.slice(1), 16);
-    root.setProperty('--accent', c);
-    root.setProperty('--accent-rgb', ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255));
-    orb.setColor(c); orb2.setColor(c);
-  }));
-  // прямая ссылка на установщик последней версии
-  fetch('https://api.github.com/repos/stelferovskiy/stella/releases/latest')
-    .then((r) => (r.ok ? r.json() : null))
-    .then((rel) => {
-      if (!rel) return;
-      const asset = (rel.assets || []).find((a) => /\.exe$/i.test(a.name));
-      document.getElementById('ver').textContent = 'Version ' + String(rel.tag_name || '').replace(/^v/, '') + (asset ? ' · ' + Math.round(asset.size / 1048576) + ' MB' : '');
-      if (asset) document.querySelectorAll('.dl-link').forEach((a) => (a.href = asset.browser_download_url));
-    })
-    .catch(() => {});
-})();
-</script>
+      <div class="hero-core" aria-label="Animated Stella star core" data-i18n-aria="coreAria"><div class="core-guide"></div><canvas id="orb" aria-hidden="true"></canvas><div class="core-status"><span class="signal"></span><span data-i18n="coreStatus">Your workspace is ready</span></div></div>
+    </div><div class="wrap agent-rail" aria-label="Available AI providers" data-i18n-aria="providersAria"><span data-i18n="railLabel">Choose your system</span>
+      <button type="button" class="agent active" data-color="#E0875F" aria-pressed="true"><i></i>Claude</button><button type="button" class="agent" data-color="#5FB8C9" aria-pressed="false"><i></i>Codex</button><button type="button" class="agent" data-color="#6FD3A0" aria-pressed="false"><i></i>ChatGPT</button><button type="button" class="agent" data-color="#6B86FF" aria-pressed="false"><i></i>DeepSeek</button><button type="button" class="agent" data-color="#E58AC0" aria-pressed="false"><i></i>Gemini</button><button type="button" class="agent" data-color="#C9A86A" aria-pressed="false"><i></i>OpenRouter</button>
+    </div></header>
+    <section class="section workspace" id="workspace"><div class="wrap">
+      <div class="section-heading"><div><p class="section-index" data-i18n="workspaceLabel">Your workspace</p><h2 data-i18n="workspaceTitle">The whole project, in view.</h2></div><p data-i18n="workspaceIntro">Move between agents without losing the work around them. Chats, projects, limits and tools stay in reach.</p></div>
+      <figure class="screen main-screen"><a href="img/home.webp" target="_blank" rel="noopener" aria-label="Open full-size workspace screenshot" data-i18n-aria="openHome"><img src="img/home-1280.webp" srcset="img/home-1280.webp 1280w, img/home.webp 2560w" sizes="(max-width: 1200px) 100vw, 1160px" width="2560" height="1391" loading="lazy" alt="Stella workspace with agents, projects, star core and usage panels" data-i18n-alt="homeAlt"></a><figcaption data-i18n="homeCaption">The live star core and the project dashboard in Stella.</figcaption></figure>
+      <div class="feature-strip"><div><h3 data-i18n="projectTitle">Projects and history</h3><p data-i18n="projectText">Find, resume, pin and export local conversations. Work in the folder you choose.</p></div><div><h3 data-i18n="controlTitle">You decide what runs</h3><p data-i18n="controlText">Review commands and file changes, set access levels, and answer agent questions in chat.</p></div><div><h3 data-i18n="handoffTitle">Pass the work on</h3><p data-i18n="handoffText">Hand a conversation to another agent when you need a different approach.</p></div></div>
+    </div></section>
+    <section class="section bridge-section" id="bridge"><div class="wrap bridge-layout">
+      <div class="bridge-copy"><p class="section-index" data-i18n="bridgeLabel">Bridge · Ctrl+B</p><h2 data-i18n="bridgeTitle">See the work as it happens.</h2><p data-i18n="bridgeIntro">Give one task to several agents. Bridge shows code appearing, edits replaying, commands streaming and HTML previews updating in separate lanes.</p><ul class="detail-list"><li data-i18n="bridgePoint1">Follow each agent in its own lane</li><li data-i18n="bridgePoint2">Inspect commands and edits in the constellation</li><li data-i18n="bridgePoint3">Preview HTML changes while the task runs</li></ul></div>
+      <figure class="screen bridge-screen"><a href="img/bridge.webp" target="_blank" rel="noopener" aria-label="Open full-size Bridge screenshot" data-i18n-aria="openBridge"><img src="img/bridge-1280.webp" srcset="img/bridge-1280.webp 1280w, img/bridge.webp 2560w" sizes="(max-width: 900px) 100vw, 700px" width="2560" height="1391" loading="lazy" alt="Stella Bridge showing parallel agent lanes, code, terminal and preview" data-i18n-alt="bridgeAlt"></a><figcaption data-i18n="bridgeCaption">Bridge makes each step visible while agents work.</figcaption></figure>
+    </div></section>
+    <section class="section capabilities" id="images"><div class="wrap"><div class="section-heading"><div><p class="section-index" data-i18n="moreLabel">More ways to work</p><h2 data-i18n="moreTitle">From a prompt to a finished piece.</h2></div><p data-i18n="moreIntro">Stella brings the daily tools around your agents into the same window.</p></div>
+      <div class="cap-grid"><article class="cap featured"><span class="cap-symbol" aria-hidden="true">✳</span><h3 data-i18n="gptImagesTitle">GPT Images</h3><p data-i18n="gptImagesText">Create images with your signed-in ChatGPT/Codex account. Choose an aspect ratio or transparent background, then save from a local gallery.</p><span class="cap-foot" data-i18n="gptImagesFoot">Uses your Codex allowance</span></article>
+        <article class="cap"><span class="cap-symbol" aria-hidden="true">◈</span><h3 data-i18n="studioTitle">Studio</h3><p data-i18n="studioText">Generate images with FLUX through Cloudflare Workers AI and keep them in a gallery.</p></article>
+        <article class="cap"><span class="cap-symbol" aria-hidden="true">⌘</span><h3 data-i18n="toolsTitle">Tools at hand</h3><p data-i18n="toolsText">Use the built-in terminal, schedule tasks, attach files, and open Stella from the tray or global hotkey.</p></article>
+        <article class="cap"><span class="cap-symbol" aria-hidden="true">◇</span><h3 data-i18n="usageTitle">Real usage</h3><p data-i18n="usageText">See Claude subscription limits and agent token usage in your workspace.</p></article></div>
+      <figure class="screen chat-screen"><a href="img/chat.webp" target="_blank" rel="noopener" aria-label="Open full-size chat screenshot" data-i18n-aria="openChat"><img src="img/chat-1280.webp" srcset="img/chat-1280.webp 1280w, img/chat.webp 2560w" sizes="(max-width: 1200px) 100vw, 1160px" width="2560" height="1391" loading="lazy" alt="Stella chat with command steps, an approval card and a formatted answer" data-i18n-alt="chatAlt"></a><figcaption data-i18n="chatCaption">Readable chat with the agent's steps and approval requests.</figcaption></figure>
+    </div></section>
+    <section class="section install" id="install"><div class="wrap install-layout"><div><p class="section-index" data-i18n="installLabel">Get started</p><h2 data-i18n="installTitle">Set up your own workspace.</h2><p data-i18n="installIntro">Install Stella, then connect the AI tools and accounts you want to use in Systems. Stella does not bundle or resell proprietary agents.</p><div class="hero-actions"><a class="button primary" href="https://github.com/stelferovskiy/stella/releases/latest" data-i18n="getInstaller">Get the installer</a><a class="button secondary" href="https://github.com/stelferovskiy/stella#build-from-source" data-i18n="buildSource">Build from source</a></div><p class="install-meta" data-i18n="installMeta">Windows 10/11 x64 · Node.js LTS required · Current releases are unsigned</p></div>
+      <ol class="setup"><li><strong data-i18n="step1Title">Install Node.js LTS</strong><span data-i18n="step1Text">Get it from nodejs.org before running Stella.</span></li><li><strong data-i18n="step2Title">Run the Stella installer</strong><span data-i18n="step2Text">Choose the installation folder and shortcuts.</span></li><li><strong data-i18n="step3Title">Connect your systems</strong><span data-i18n="step3Text">Sign in to Claude or Codex/ChatGPT, or add API keys for other providers.</span></li></ol></div></section>
+    <section class="section trust"><div class="wrap trust-layout"><div><p class="section-index" data-i18n="trustLabel">Made to be yours</p><h2 data-i18n="trustTitle">Local by design. Open to inspect.</h2></div><div class="trust-items"><p data-i18n="privacyText">Chats, settings and generated images stay on your computer. Stella has no telemetry or analytics. Content goes to the AI service you choose when you use it.</p><div class="trust-links"><a href="https://github.com/stelferovskiy/stella/blob/main/PRIVACY.md" data-i18n="privacyLink">Privacy statement</a><a href="https://github.com/stelferovskiy/stella/blob/main/CODE_SIGNING_POLICY.md" data-i18n="signingLink">Code signing policy</a><a href="https://github.com/stelferovskiy/stella/blob/main/LICENSE" data-i18n="licenseLink">MIT license</a></div></div></div></section>
+  </main>
+  <footer><div class="wrap footer-inner"><a class="brand" href="#top">STELLA</a><span data-i18n="footerTag">Your agents, under one star.</span><div><a href="https://github.com/stelferovskiy/stella">GitHub</a><a href="https://github.com/stelferovskiy/stella/releases" data-i18n="releases">Releases</a><a href="https://github.com/stelferovskiy/stella/issues" data-i18n="issues">Report an issue</a></div><small>© 2026 stelferovskiy · MIT</small></div></footer>
 </body>
 </html>
