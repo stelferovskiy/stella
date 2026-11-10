@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('stella', {
   dnsTest: (id, host) => ipcRenderer.invoke('dns:test', id, host),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   setApiKey: (key) => ipcRenderer.invoke('apikey:set', key),
+  claudeModels: (force) => ipcRenderer.invoke('claude:models', !!force),
   codexModels: () => ipcRenderer.invoke('codex:models'),
   codexAccount: () => ipcRenderer.invoke('codex:account'),
   accountsState: () => ipcRenderer.invoke('accounts:state'),

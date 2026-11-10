@@ -307,6 +307,7 @@ function wireIpc() {
     } catch (err) { return { ok: false, error: err.message }; }
   });
   ipcMain.handle('chatgpt:models', async () => openaiProvider.listModels(getApiKey()));
+  ipcMain.handle('claude:models', async (_e, force) => claudeProvider.listModels(store.getSettings(), { force: !!force }));
   ipcMain.handle('codex:models', async () => codexProvider.listModels(store.getSettings()));
   ipcMain.handle('codex:account', async () => codexProvider.getAccount(store.getSettings()));
 

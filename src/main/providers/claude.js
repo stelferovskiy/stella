@@ -321,4 +321,50 @@ async function run({ chat, text, attachments, settings, emit, emitLive, requestA
   return { status: abortController.signal.aborted ? 'stopped' : status, usage, limitHit: limitHit && status === 'error' };
 }
 
-module.exports = { run, findClaudeExe, findSdk, describeTool, partialField };
+// Model list as Claude Code offers it for the active account (subscription tier decides what is
+// there, e.g. Fable 5.2 on paid plans). Asked from the CLI without sending a prompt; cached per
+// account and SDK, since each lookup starts a CLI process.
+const MODELS_TTL = 30 * 60 * 1000;
+const modelsCache = new Map(); // key -> { at, list } | { at, pending }
+async function listModels(settings, opts) {
+  const sdkPath = findSdk(settings);
+  if (!sdkPath) throw new Error(L('claude.sdkMissing'));
+  const accEnv = accounts.envFor(settings, 'claude');
+  const key = sdkPath + '|' + (accEnv.CLAUDE_CONFIG_DIR || '');
+  const hit = modelsCache.get(key);
+  if (hit && hit.pending) return hit.pending;
+  if (hit && hit.list && !(opts && opts.force) && Date.now() - hit.at < MODELS_TTL) return hit.list;
+  const pending = (async () => {
+    const { query } = await loadSdk(settings);
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const options = { cwd: os.homedir(), settingSources: ['user'] }; // user settings may narrow availableModels
+    const exe = findClaudeExe(settings);
+    if (exe) options.pathToClaudeCodeExecutable = exe;
+    if (accEnv.CLAUDE_CONFIG_DIR) options.env = Object.assign({}, process.env, accEnv);
+    const q = query({ prompt: (async function* () { await gate; })(), options });
+    let timer;
+    try {
+      const raw = await Promise.race([
+        q.supportedModels(),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('timeout')), 30000); })
+      ]);
+      return (raw || []).filter((m) => m && m.value).map((m) => ({
+        id: m.value, resolved: m.resolvedModel || '', name: m.displayName || m.value, description: m.description || '',
+        efforts: Array.isArray(m.supportedEffortLevels) ? m.supportedEffortLevels : [], isDefault: m.value === 'default'
+      }));
+    } finally { clearTimeout(timer); release(); try { q.close(); } catch (e) {} }
+  })();
+  modelsCache.set(key, { at: hit ? hit.at : 0, list: hit && hit.list, pending });
+  try {
+    const list = await pending;
+    modelsCache.set(key, { at: Date.now(), list });
+    return list;
+  } catch (e) {
+    if (hit && hit.list) { modelsCache.set(key, hit); return hit.list; }
+    modelsCache.delete(key);
+    throw e;
+  }
+}
+
+module.exports = { run, listModels, findClaudeExe, findSdk, describeTool, partialField };

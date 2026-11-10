@@ -161,7 +161,25 @@
   let catalogRequest = 0;
   function isApiChat(agent) { return agent === 'chatgpt' && S.settings.chatgpt.backend === 'api'; }
   function usesCodex(agent) { return agent === 'codex' || (agent === 'chatgpt' && S.settings.chatgpt.backend !== 'api'); }
+  // Claude: the list comes from Claude Code for the signed-in account, so new models (and ones a
+  // plan unlocks) appear without a Stella update. Until it loads, or if it fails, the static list stays.
+  let claudeCatalog = null;
+  let claudeRequest = 0;
+  async function refreshClaude(force) {
+    const request = ++claudeRequest;
+    let list = null;
+    try { list = await api.claudeModels(force === true); } catch (e) { list = null; }
+    if (request !== claudeRequest) return;
+    if (Array.isArray(list) && list.length) claudeCatalog = list;
+    else if (force === true) claudeCatalog = null;
+    renderModelSelects();
+  }
+  function claudeFind(id) {
+    if (!claudeCatalog || !id) return null;
+    return claudeCatalog.find((m) => m.id === id) || claudeCatalog.find((m) => m.resolved === id && m.id !== 'default') || null;
+  }
   async function refreshCodex() {
+    refreshClaude();
     const request = ++catalogRequest;
     const results = await Promise.allSettled([api.codexModels(), api.codexAccount()]);
     if (request !== catalogRequest) return;
@@ -177,6 +195,7 @@
     if (!ML) return;
     const cfg = S.settings[agent] || {};
     const selected = cfg[modelKey(agent)] || '';
+    if (agent === 'claude' && claudeCatalog) return renderClaudeSelects(cfg, selected);
     const dynamic = usesCodex(agent);
     const catalog = codexCatalog || [];
     const models = dynamic ? [MODEL_AUTO].concat(catalog.map((m) => [m.model || m.id, m.displayName || m.model || m.id])) : ML.models;
@@ -203,6 +222,23 @@
       warning.append(auto);
       const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'mini-btn'; retry.textContent = L('common.refresh'); retry.onclick = refreshCodex; warning.append(retry);
     }
+  }
+  function renderClaudeSelects(cfg, selected) {
+    const def = claudeCatalog.find((m) => m.isDefault);
+    const auto = def ? ['', L('model.auto') + ' · ' + def.description.split(' · ')[0]] : MODEL_AUTO;
+    const rows = claudeCatalog.filter((m) => !m.isDefault).map((m) => [m.id, m.name]);
+    // opusplan is a Claude Code mode, not a model: the CLI accepts it but does not list it.
+    const models = [auto].concat(rows, [['opusplan', L('model.opusplan')]]);
+    const match = claudeFind(selected);
+    const model = selected ? match : def;
+    const levels = model ? model.efforts : (selected === 'opusplan' ? MODEL_LISTS.claude.efforts.slice(1).map((e) => e[0]) : []);
+    const efforts = [EFFORT_OFF].concat(levels.map((v) => effort(v)));
+    fillSelect($('modelSelect'), models, match ? match.id : selected);
+    $('modelSelect').title = model ? model.description : '';
+    fillSelect($('effortSelect'), efforts, cfg.effort || '');
+    $('effortSelect').title = '';
+    const warning = $('codexModelWarning');
+    if (warning) { warning.textContent = ''; warning.hidden = true; }
   }
   $('modelSelect').addEventListener('change', async (e) => { const a = viewAgent(); await saveSettings({ [a]: Object.assign({}, S.settings[a], { [modelKey(a)]: e.target.value }) }); });
   $('effortSelect').addEventListener('change', (e) => { const a = viewAgent(); saveSettings({ [a]: Object.assign({}, S.settings[a], { effort: e.target.value }) }); });
